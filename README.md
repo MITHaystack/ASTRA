@@ -38,6 +38,7 @@ ASTRA can be constructed by a small group using off the shelf components, 3D pri
 - [Software Configuration](software/software-overview.md)
 - [Integration and Testing](testing/testing-overview.md)
 - [Focusing and Calibration](testing/focusing-cal-overview.md)
+- [Environmental](testing/environmental-overview.md)
 - [Prior Versions](docs/astra-prior-version-archive.md)
 
 Although many alternative components exist the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
@@ -55,6 +56,7 @@ Our lessons are currently under development and will be released after we comple
 ### Setup and Calibration
 - [How to Align ASTRA](lessons/astra-intro-align)
 - [How to Focus ASTRA](lessons/astra-intro-focus)
+- [Safe Observing with ASTRA](lessons/astra-safety)
 
 ### Basic Data Taking
 - [Pointing and Tracking](lessons/astra-intro-pointing)
