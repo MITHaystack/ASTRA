@@ -3,26 +3,32 @@
 The ASTRA base is used to allow for the telescopes and electronics to be transported 
 as a single unit. This allows easy movement of an assembled and working systems from 
 an indoor location (e.g. a classroom) to an outdoor location where observations can be 
-made (i.e. a field / tennis court / etc.)
+made (i.e. a field / tennis court / etc.). Generally it is necessary to disassemble the
+major ASTRA components for transport by vehicle. 
 
 The base is a key part of ASTRA as a 'science teaching cart' and the
 wheels allow rolling the unit through normal doorways and over reasonably flat 
 terrian (e.g. a parking lot or sidewalk). It is possible to use larger wheels and
-construct an off-road variant but the overall size is cumbersome for indoor use. 
+construct an off-road variant but the overall size is cumbersome for indoor use. Care is
+necessary to balance getting the unit through a normal door without disassemble and the
+wheel clearance and tripod size. 
 
-The base has wheels and leveling feed in addition to attachment points for the tripod and 
+The base has wheels and leveling feet in addition to attachment points for the tripod and 
 webbing for the enclosures. It is constructed using wood and off the shelf hardware using 
 generally available tools. A 3D printed mounting bracket is used for holding the tripod feet 
-and as a template for marking the needed hole locations and cut angles. 
+and as a template for marking the needed hole locations and cut angles for the central 
+connection point. 
 
-The leveling feet in the design to allow physical alignment of ASTRA. They 
-also serve to prevent ASTRA from moving when in use. The threaded rod used for these feet
-has moderately fine pitch threads. This is somewhat inconvenient for initial leveling but
-does allow for fine adjustment. Other types of feed (e.g. self leveling casters) can possibly
+The leveling feet in the design allow for physical leveling for ASTRA. They 
+also serve to prevent ASTRA from moving when in use and this is important for consistent
+motion of the antenna. The threaded rod used for these feet has moderately fine pitch threads.
+This is somewhat inconvenient for initial leveling due to the number of turns needed. However,
+it does allow for fine adjustment. Other types of feet (e.g. self leveling casters) can possibly
 be used for areas which can accomodate lower clearance in the wheels. 
 
-Note that precise assembly of the base is critical. It leads to good alignment of the antenna 
-and enables automatic pointing of the system. 
+Note that precise assembly of the base is critical. In particular the alignment of the three
+central members at their inner point needs to be done in a manner that ensures the mount base
+members are planar. This leads to good alignment of the antenna and enables automatic pointing of the system. 
 
 ## Assembly Brackets
 

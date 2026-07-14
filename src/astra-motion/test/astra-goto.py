@@ -11,7 +11,7 @@ import argparse
 import os
 import sys
 import traceback
-import synscan
+import azgti
 
 
 
@@ -122,7 +122,9 @@ if __name__ == "__main__":
         # This is an initial test. We will ultimately do this via the 
         # motion control service which will also provide an API to isolate
         # different antenna controllers. 
-        mc = synscan.motors(serial_dev=options.dev)
+        ifx = azgti.AzGTi_Interface(options.dev,verbose=options.verbose)
+        mount = azgti.AzGTi_Protocol(ifx,verbose=options.verbose)
+        mount._setup_motion_scaling()
     except Exception as e:
         print("Problem connecting to the motion controller via the USB to serial connection. ")
         traceback.print_exc()
@@ -137,13 +139,13 @@ if __name__ == "__main__":
         print("Azimuth outside valid range, default to 0.0")
         az = 0.0
     
-    if el < 0.0:
-        print("Elevation is below zero, level unit and resync.")
+    if el < -5.0:
+        print("Elevation is below -5.0 deg, level unit and resync.")
         print("default to elevation 0.0")
         el = 0.0
 
-    if el > 90.0:
-        print("Antenna cannot point greater than 90.0 elevation, default to elevation 0.0")
+    if el > 180.0:
+        print("Antenna cannot point greater than 180.0 elevation (over top), default to elevation 0.0")
         el = 0.0
 
     # check motion rate for basic sanity
@@ -157,12 +159,17 @@ if __name__ == "__main__":
         azr = 1.0
 
     if elr < 0.0 or elr > 5.0:
-        print("Elevation rate must be between 0.0 and 5.0 deg / sec.")
+        print("Altitude rate must be between 0.0 and 5.0 deg / sec.")
         print("Defaulting to 1.0 deg / sec")
         elr = 1.0
 
     # set axis rates
-    mc.axis_set_speed(1,azr)
-    mc.axis_set_speed(2,elr)
-    # goto
-    mc.goto(az,el)
+    mount.set_speed(azgti.Axis.AZ, azr)
+    mount.set_speed(azgti.Axis.ALT, elr)
+
+    # goto position
+    mount.goto_position(az,el)
+
+    if options.verbose:
+        (az,el) = mount.get_position()
+        print(f"move to {az:05.2f}AZ {el:05.2f}ALT")

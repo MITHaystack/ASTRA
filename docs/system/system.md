@@ -67,6 +67,8 @@ You may also need to install ssh using a terminal.
 ''' 
 sudo apt-get install ssh
 sudo ufw allow ssh
+sudo ufw allow https
+sudo ufw allow http
     
 '''
 
@@ -133,6 +135,21 @@ direct access to ASTRA for web browser based use of the system.
 sudo systemctl unmask hostapd
 sudo systemctl enable hostapd
 sudo systemctl start hostapd
+
+Substitute the name from nmcli device for the wifi interface below for wlan0 and wlan1.
+For example:
+
+sudo nmcli d wifi hotspot ifname wlx00c0cabb50b8 ssid ASTRA password ASTRA314
+
+For persistent usage:
+
+nmcli connection add type wifi ifname wlan0 con-name access_point autoconnect yes ssid my_ssid
+nmcli connection modify access_point 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
+nmcli connection modify access_point wifi-sec.key-mgmt wpa-psk
+nmcli connection modify access_point wifi-sec.psk "my_password"
+nmcli connection up access_point
+
+
 '''
 
 To enable internet:
@@ -152,6 +169,15 @@ mkdir /data/rf
 mkdir /data/images
 mkdir /data/config
 mkdir /data/mnt
+mkdir /data/notebooks
+
+## The /data/examples data are for persistent "backup" data and configurations
+
+mkdir /data/examples
+mkdir /data/examples/rf
+mkdir /data/examples/images
+mkdir /data/examples/config
+mkdir /data/examples/notebooks
 
 '''
 
@@ -170,26 +196,228 @@ bash ./radioconda-.*-Linux-aarch64.sh
 
 Accept the license and use the defaults for the installation.
 
+## Pluto Radio Setup
+It is necessary to install and update some udev rules to enable the non-root
+accounts to access the PlutoSDR.
+
+'''
+https://github.com/analogdevicesinc/plutosdr-fw/blob/master/scripts/53-adi-plutosdr-usb.rules
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+'''
+
+
 ## Install LogGuru
 
 '''
 pip install loguru
 '''
 
-## Install pysynscan library -- DEPRECATE?
+## Install pyserial
 
-Both a serial interface library and the synscan controller library are needed for motion control using
-the AzGTI mount. This assumes use of a USB to serial converter as the physical interface. 
+A serial interface library is needed for interface to the antenna interface unit
+RP2040 computer. 
 
 '''
 pip install pyserial
-pip install synscan
+'''
+
+## Install python-statemachine
+
+We need an asyncio compatible means of handling state machine behavior for
+implementing services and control patterns.
+
+'''
+pip install python-statemachine
+'''
+
+## install nanomq
+
+Nanomq is used for the local on ASTRA messaging bus. This allows realtime 
+interconnection of different software components in a pub-sub framework. 
+Nanomq provides a means to bridge ZMQ usage in legacy srt-py software to 
+allow for easier migration to MQTT messaging. We build from source to enable
+this feature. 
+
+'''
+
+'''
+git clone --recurse-submodules https://github.com/nanomq/nanomq.git
+cd nanomq
+mkdir build
+cd build
+cmake ../ -DBUILD_ZMQ_GATEWAY=ON 
+
+
+'''
+
+Instructions for this may be found [here](https://nanomq.io/docs/en/latest/config-description/introduction.html)
+
+'''
+cd ../etc
+sudo cp nanomq.conf /etc
+sudo cp nanomq_pwd.conf /etc/
+sudo cp nanomq_acl.conf /etc/
+sudo cp nanomq_zmq_gateway.conf /etc/
+
+Edit the configuration file to setup correct network and permission configurations. Put logging into /data/logs ...
+
+Create nanomq system user
+
+sudo useradd -r -s /sbin/nologin nanomq
+
+sudo systemctl daemon-reload
+sudo systemctl start nanomq
+
+'''
+
+## Setup NanoMQ as a serivce
+
+'''
+sudo nano /etc/systemd/system/nanomq.service
+
+[Unit]
+Description=NanoMQ MQTT Broker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nanomq start --conf /etc/nanomq.conf
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+
+'''
+
+## install mqtt client libraries
+
+'''
+pip install paho-mqtt
+pip install mqtt5
+pip install aiomqtt
+or if aiomqtt is older than version 3.0
+pip install aiomqtt==3.0.0-alpha.1
+'''
+
+## Install zmq
+
+'''
+sudo apt install -y libzmq3-dev
+pip install pyzmq
+'''
+
+## Install redis server
+'''
+sudo apt install redis-server -y
+sudo systemctl start redis-server
+'''
+
+
+## Install Mongodb
+
+'''
+sudo apt-get install gnupg curl
+
+curl -fsSL https://pgp.mongodb.com/server-8.0.asc | \
+   sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+   --dearmor
+
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.3 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-8.3.list
+
+sudo apt-get update
+
+sudo chown astra-admin:astra-admin /var/run/mongodb/
+sudo mkdir /var/run/mongodb
+
+'''
+
+Note there is a bug which requires a configuration change to enable use with newer Linux kernels. 
+
+'''
+[Unit]
+Description=MongoDB Database Server
+Documentation=https://docs.mongodb.org/manual
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=astra-admin
+Group=astra-admin
+EnvironmentFile=-/etc/default/mongod
+#Environment="MONGODB_CONFIG_OVERRIDE_NOFORK=1"
+Environment="GLIBC_TUNABLES=glibc.pthread.rseq=1"
+ExecStart=/usr/bin/mongod --config /etc/mongod.conf
+ExecReload=/bin/kill -HUP $MAINPID
+RuntimeDirectory=/data/db/
+PIDFile=/data/tmp/mongod.pid
+# file size
+LimitFSIZE=infinity
+# cpu time
+LimitCPU=infinity
+# virtual memory size
+LimitAS=infinity
+# open files
+LimitNOFILE=32768
+# processes/threads
+LimitNPROC=32768
+# locked memory
+LimitMEMLOCK=infinity
+# total threads (user+kernel)
+TasksMax=infinity
+TasksAccounting=false
+
+# Recommended limits for mongod as specified in
+# https://docs.mongodb.com/manual/reference/ulimit/#recommended-ulimit-settings
+
+[Install]
+WantedBy=multi-user.target
+
+'''
+
+## Install Marimo
+
+
+'''
+sudo nano /etc/systemd/system/marimo-app.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable marimo-app.service
+sudo systemctl start marimo-app.service
+
+This is a configuration to allow for editable notebooks. There is a security risk associated with this if
+the people doing the coding are not well supervised. However, it does allow for interactive development of
+lessons and projects. 
+
+[Unit]
+Description=marimo Application
+After=network.target
+
+[Service]
+Type=simple
+User=astra-admin
+WorkingDirectory=/data/notebooks
+Environment="PATH=/home/astra-admin/radioconda/bin:/home/astra-admin/radioconda/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr>
+ExecStart=/home/astra-admin/radioconda/bin/marimo edit --headless --port 8085 --host 0.0.0.0 --token-password "astra"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+
+
+
 '''
 
 ## Install QPHYCCD driver
 
-Drivers move around a bit on the QPHYCCD web site. You want the ARM64 driver so it works with 
-the Pi 5 CPU. 
+Drivers move around a bit on the QPHYCCD web site. You want the ARM64 driver so it works with Intel / AMD64 machines. 
 
 Current [link](https://www.qhyccd.com/html/prepub/log_en.html#!log_en.md) with the latest [driver](https://www.qhyccd.com/file/repository/publish/SDK/25.09.29/sdk_linux64_25.09.29.tgz)
 
@@ -198,8 +426,8 @@ Download this file, open the archive, and install the software.
 
 wget https://www.qhyccd.com/file/repository/publish/SDK/25.09.29/sdk_linux64_25.09.29.tgz
 
-tar xvzf sdk_Arm64_25.09.29.tgz
-cd sdk_Arm64_25.09.29
+tar xvzf sdk_linux64_25.09.29.tgz
+cd sdk_linux64_25.09.29
 sudo bash ./install.sh
 
 '''
@@ -231,6 +459,7 @@ sudo apt install -y git cdbs dkms cmake fxload libev-dev libgps-dev libgsl-dev l
 git clone --depth 1 https://github.com/indilib/indi.git
 cd indi
 mkdir build
+cd build
 cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release ..
 make -j4
 sudo make install
@@ -283,6 +512,25 @@ pip install pyindi-client
 pip install git+https://github.com/MMTObservatory/pyINDI.git
 '''
 
+## Indi Web Manager
+'''
+sudo apt-add-repository ppa:mutlaqja/ppa -y
+sudo apt update
+sudo apt -y install python3-pip
+pip3 install indiweb					(NOTE: Not as root!)
+sudo apt -y install indiwebmanagerapp
+'''
+
+## Astropy
+'''
+pip install astropy
+'''
+
+## Magnetic model
+'''
+pip install pywmm
+'''
+
 ## Configure and startup indi service
 
 ## Install PyINDI debug services
@@ -296,8 +544,10 @@ distribution builds online generally do not work properly due to library relocat
 
 '''
 
-sudo apt-get install cmake librtaudio-dev libfftw3-dev libglfw3-dev libzstd-dev libairspy-dev libairspyhf-dev libhackrf-dev libiio-dev libad9361-dev libsoapysdr-dev
+sudo apt-get install cmake libvolk-dev librtaudio-dev libfftw3-dev libglfw3-dev libzstd-dev libairspy-dev libairspyhf-dev libhackrf-dev libiio-dev libad9361-dev libsoapysdr-dev
 
+cd Programs
+git clone https://github.com/AlexandreRouma/SDRPlusPlus.git
 mkdir build
 cd build
 cmake  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../
@@ -306,10 +556,29 @@ sudo make install
 
 '''
 
+## Build Kstars / Ekos
+
+'''
+sudo apt install build-essential cmake git extra-cmake-modules gettext
+sudo apt install qt6-base-dev qt6-declarative-dev qt6-multimedia-dev qt6-svg-dev libkf6config-dev libkf6kio-dev libkf6i18n-dev libkf6xmlgui-dev libkf6plotting-dev libkf6notifications-dev libkf6notifyconfig-dev libkf6newstuff-dev libcfitsio-dev libnova-dev libraw-dev libgsl-dev zlib1g-dev libeigen3-dev
+
+'''
+
+
 ## Install Stellarium
 
 '''
 sudo apt install stellarium
+pip install stellariumrc
+
+Enable remote control interface if you want.
+
+Enable the Remote Control PluginOpen Stellarium and press F2 to open the Configuration window.Select the Plugins tab in the left-hand menu.Scroll down and click on Remote Control.Check the "Load at startup" box.Close the Configuration window and restart Stellarium.
+
+Start the Web ServerAfter restarting, press F2 and go back to the Plugins tab -> Remote Control.Check both the "Server enabled" and "Enable automatically on startup" boxes.Note the port number (default is 8090).Restart Stellarium one final time to finalize the server activation.
+
+Access the ServerOpen any modern web browser and navigate to http://localhost:8090 to access the standard web GUI, or use http://localhost:8090/tablet7in.html if you are on a smaller 7-inch touch device
+
 '''
 
 ### Enable Stellarium goto mount plugin

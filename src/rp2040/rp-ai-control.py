@@ -35,18 +35,48 @@ import adafruit_displayio_sh1107
 VERSION = "v1.0.0a-20260530"
 
 
+ai_state = {'event':'ai-state',
+            'utc':"2000-01-01T00:00:00Z",
+            'latitude':0.0,
+            'longitude':0.0,
+            'altitude':0.0,
+            'sats':0,
+            'fix':0,
+            'temperature':0.0,
+            'calibrated':0,
+            'pointing':(0.0,0.0),
+            'diode-state':'DISABLED'}
+
 """
     Convert quaternion to azimuth / altitude
     Assumes a sensor orientation with board top upward in case and adafruit logo to back near cover side.
 """
 def quat_to_az_el(q):
-    w,x,y,z = q
-    vx = 1.0 - 2.0 * y**2 - 2.0 * z**2
-    vy = 2.0 * x * y + 2.0 * w * z
-    vz = 2.0 * x * z - 2.0 * w * y
-    azimuth = math.atan2(vx,vy)
-    elevation = math.asin(vz)
-    return math.degrees(azimuth), math.degrees(elevation)
+    w,x0,y0,z0 = q
+    # rotate to IMU coordinates
+    x = x0
+    y = y0
+    z = z0
+    # compute vectors
+    # Assumes a right-handed coordinate system where:
+    #   +x is Right
+    #   +y is Forward
+    #   +z is Up
+    #
+    vx = 2 * (x * y + w * z)
+    vy = w * w + y * y - x * x - z * z
+    vz = 2 * (y * z - w * x)
+    # compute angles
+    azimuth = -math.degrees(math.atan2(vx, vy))
+    altitude = math.degrees(math.asin(vz / math.sqrt(vx*vx + vy*vy + vz*vz)))
+    return (azimuth, altitude)
+    
+    #vx = 1.0 - 2.0 * y**2 - 2.0 * z**2
+    #vy = 2.0 * x * y + 2.0 * w * z
+    #vz = 2.0 * x * z - 2.0 * w * y
+    #azimuth = math.atan2(vy,vx)
+    #elevation = math.asin(vz)
+    #return math.degrees(azimuth), math.degrees(elevation)
 
 
 """
@@ -69,6 +99,8 @@ def connect_gps(logQ):
     try:
         i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
         gps = adafruit_gps.GPS_GtopI2C(i2c, debug=False)  # Use I2C interface
+        gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+        gps.send_command(b"PMTK220,1000")
     except Exception as e:
         e_event = {'event':'exception','source':'connect_gps','value':f"{e}"}
         logQ.put(e_event)
@@ -82,6 +114,7 @@ def connect_gps(logQ):
     sent back to the host. 
 """
 def telemetry_gps(gps):
+    #print("get GPS update")
     gps.update()
 
     gps_utc_time = "{:02}-{:02}-{:02}T{:02}:{:02}:{:02}Z".format(  
@@ -93,7 +126,7 @@ def telemetry_gps(gps):
                     gps.timestamp_utc.tm_sec) # no time but UTC in ISO8601
 
     gps_data = {
-        'event' : 'gps-data',
+        'event' : 'ai-gps-data',
         'utc'   : gps_utc_time,
         'adata' : gps.isactivedata,
         'fix'   : gps.has_fix,
@@ -144,9 +177,10 @@ def telemetry_imu(imu):
     euler = imu.euler
     quaternion = imu.quaternion
     pointing = quat_to_az_el(quaternion)
+    # need to figure out if this has declination to remove or not...
 
     imu_data = {
-        'event' : 'imu-data',
+        'event' : 'ai-imu-data',
         'temperature' : imu.temperature,
         'calibrated' : imu.calibrated,
         'cal-status' : imu.calibration_status,
@@ -159,7 +193,7 @@ def telemetry_imu(imu):
         'magnetic'  : imu.magnetic,
         'quaternion' : quaternion,
     }
-
+    
     return imu_data
 
 """
@@ -182,7 +216,8 @@ def connect_gpio(logQ):
     and pushes it to the telemetry queue. Errors are logged to 
     the log queue. 
 """
-async def gps_telemetry(telemetryQ,logQ, i2cSBL, gps,gps_period):
+async def gps_telemetry(telemetryQ,logQ, i2cSBL, stateL, gps,gps_period):
+    global ai_state
     while True:
         #print("update gps_telemetry")
         # GPS
@@ -190,6 +225,16 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, gps,gps_period):
             async with i2cSBL:
                 gps_t = telemetry_gps(gps)
             await telemetryQ.put(gps_t)
+            # update global AI state
+            async with stateL:
+                #print("update gps", gps_t)
+                ai_state['utc'] = gps_t['utc']
+                ai_state['latitude'] = gps_t['latitude']
+                ai_state['longitude'] = gps_t['longitude']
+                ai_state['altitude'] = gps_t['altitude']
+                ai_state['sats'] = gps_t['sats']
+                ai_state['fix'] = gps_t['fix']
+            
         except Exception as e:
             e_event = {'event':'exception','source':'gps_telemetry','value':f"{e}"}
             await logQ.put(e_event)
@@ -201,7 +246,8 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, gps,gps_period):
     and pushes it to the telemetry queue. Errors are logged to 
     the log queue. 
 """
-async def imu_telemetry(telemetryQ,logQ,i2cSBL,imu,imu_period):
+async def imu_telemetry(telemetryQ,logQ,i2cSBL,stateL, imu,imu_period):
+    global ai_state
     while True:
         #print("update imu_telemetry")
         # IMU
@@ -209,6 +255,15 @@ async def imu_telemetry(telemetryQ,logQ,i2cSBL,imu,imu_period):
             async with i2cSBL:
                 imu_t = telemetry_imu(imu)
             await telemetryQ.put(imu_t)
+ 
+            # update global AI state
+            async with stateL:
+                #print("update imu", imu_t)
+                ai_state['temperature'] = imu_t['temperature']
+                ai_state['calibrated'] = imu_t['calibrated']
+                ai_state['pointing'] = imu_t['pointing']
+
+ 
         except Exception as e:
             e_event = {'event':'exception','source':'imu_telemetry','value':f"{e}"}
             await logQ.put(e_event)
@@ -221,8 +276,8 @@ async def imu_telemetry(telemetryQ,logQ,i2cSBL,imu,imu_period):
     this includes static enable, disable, and a pulse alternating 
     at the diode period.
 """
-async def noise_diode_handler(diodeQ, logQ, i2cSBL, diode_gpio, diode_period):
-
+async def noise_diode_handler(diodeQ, logQ, i2cSBL, displayL, diode_gpio, diode_period):
+    global ai_state
     diode_state = 'DISABLE'
     diode_pulse_state = 0
    
@@ -235,15 +290,15 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, diode_gpio, diode_period):
                 ndata = diodeQ.get_nowait()
                 if ndata['value'] == 'ENABLE':
                     diode_state = 'ENABLE'
-                    status = {'event':'status', 'source':'noise_diode_handler', 'value':f"diode enable"}
+                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"enable"}
                 elif ndata['value'] == 'DISABLE':
                     diode_state = 'DISABLE'
-                    status = {'event':'status', 'source':'noise_diode_handler', 'value':f"diode disable"}
+                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"disable"}
                 elif ndata['value'] == 'PULSE':
                     diode_state = 'PULSE'
-                    status = {'event':'status', 'source':'noise_diode_handler', 'value':f"diode pulse"}
+                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"pulse"}
                 else:
-                    status = {'event':'status', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
+                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
 
                 await logQ.put(status)
 
@@ -267,6 +322,10 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, diode_gpio, diode_period):
                     else:
                         diode_pulse_state = 0
                         diode_gpio.write_gpio(0x00)
+
+            # update global AI state
+            async with displayL:
+                ai_state['diode-state'] = diode_state
             
         except Exception as e:
             e_event = {'event':'exception','source':'noise_diode_handler','value':f"{e}"}
@@ -304,50 +363,91 @@ def connect_display(logQ):
     Thread that handles display commands. Currently
     this includes a single basic output method. 
 """
-async def display_handler(displayQ, logQ, display, display_period):
+async def display_handler(logQ, displayL, display, display_period):
+    global ai_state
+    display_counter = 0
 
-    # startup splash
+    # startup splash group
     splash = displayio.Group()
+
+    # slash group
+    text_area_pos1 = label.Label(terminalio.FONT, text="ASTRA", scale=2, color=0xFFFFFF, x=8, y=8)
+    splash.append(text_area_pos1)
+    text_area_info1 = label.Label(terminalio.FONT, text="MIT", color=0xFFFFFF, x=8, y=34)
+    splash.append(text_area_info1)
+    text_area_loc1 = label.Label(terminalio.FONT, text="Haystack Observatory", color=0xFFFFFF, x=8, y=44)
+    splash.append(text_area_loc1)
+    text_area_utc1 = label.Label(terminalio.FONT, text=VERSION, color=0xFFFFFF, x=8, y=54)
+    splash.append(text_area_utc1)    
+
+    # update group
+    update_group = displayio.Group()
+    text_area_pos2 = label.Label(terminalio.FONT, text="+000.0/+00.0 |CAL", scale=1, color=0xFFFFFF, x=2, y=8)
+    update_group.append(text_area_pos2)
+    text_area_info2 = label.Label(terminalio.FONT, text="+00.0C | 1000m | 00", color=0xFFFFFF, x=2, y=24)
+    update_group.append(text_area_info2)
+    text_area_loc2 = label.Label(terminalio.FONT, text="+00.00 | +000.00 | F", color=0xFFFFFF, x=2, y=34)
+    update_group.append(text_area_loc2)
+    text_area_utc2 = label.Label(terminalio.FONT, text="2026-01-01T00:00:00Z", color=0xFFFFFF, x=2, y=44)
+    update_group.append(text_area_utc2)
+
     display.root_group = splash
-    
-    text_area = label.Label(terminalio.FONT, text="ASTRA", scale=2, color=0xFFFFFF, x=8, y=8)
-    splash.append(text_area)
-    text_area = label.Label(terminalio.FONT, text="MIT", color=0xFFFFFF, x=8, y=34)
-    splash.append(text_area)
-    text_area = label.Label(terminalio.FONT, text="Haystack Observatory", color=0xFFFFFF, x=8, y=44)
-    splash.append(text_area)
-    text_area = label.Label(terminalio.FONT, text=VERSION, color=0xFFFFFF, x=8, y=54)
-    splash.append(text_area)
-    
+    display_state = "STARTUP"
+
     # command based output
     while True:
         #print("update display_handler")
         output_data = None
-        display_state = "STANDBY"
 
-        # display
+        # display based on state
+        # show a splash screen on startup with system info
+        # transition to leveling if mount is not level
+        # transition to standby if level and update overall status
         try:
-            try:
-                ddata = displayQ.get_nowait()
-                if ddata['value'] == 'OUTPUT':
-                    display_state = 'OUTPUT'
-                    output_data = ddata['data']
-                    status = {'event':'status', 'source':'display_handler', 'value':f"output data {output_data}"}
-                else:
-                    display_state = 'STANDBY'
-                    status = {'event':'status', 'source':'display_handler', 'value':f"unknown command {ndata['value']}"}
-    
-                # report handler status
-                await logQ.put(status)
+            if display_state == "STARTUP":
+                    #print('STARTUP')
+                    if display_counter >= 5:
+                        display_state = "SETUP"
+            elif display_state == "SETUP":
+                    #print('SETUP')
+                    display.root_group = update_group
+                    display_state = "UPDATE"
+            elif display_state == "UPDATE":
+                    #print('UPDATE')
+                    async with displayL:
+                        #print(ai_state['calibrated'])
+                        if ai_state['calibrated']:
+                            cinfo = 'CAL'
+                        else:
+                            cinfo = '   '
 
-            except:
-                pass
+                        #print(ai_state['pointing'])
+                        az,el = ai_state['pointing']
+                        text_area_pos2.text = f"{az:+6.1f}/{el:+5.1f} |{cinfo}"
+                        
+                        #print(ai_state['temperature'],ai_state['altitude'],ai_state['sats'])
+                        degC = ai_state['temperature']
+                        alt = ai_state['altitude']
+                        sats = ai_state['sats']
+                        text_area_info2.text = f"{degC:+5.1f}C | {alt:4.0f}m | {sats:02d}"
 
-            # handle the state behavior
-            if display_state == 'OUTPUT':
-                out_text = output_data
-                text_area = label.Label(terminalio.FONT, text=out_text, color=0xFFFFFF, x=8, y=8)
-                splash.append(text_area)
+                        #print(ai_state['latitude'],ai_state['longitude'])
+                        lat = ai_state['latitude']
+                        lon = ai_state['longitude']
+                        if ai_state['fix'] > 0:
+                            finfo = 'F'
+                        else:
+                            finfo = '-'
+                        text_area_loc2.text = f"{lat:+6.2f} | {lon:+7.2f} | {finfo}"
+                        
+                        text_area_utc2.text = f"{ai_state['utc']}"
+
+        
+            display_counter += 1
+
+            # report handler status
+            status = {'event':'display-state', 'source':'display_handler', 'value':f"({display_state},{display_counter})"}
+            await logQ.put(status)
 
         except Exception as e:
             e_event = {'event':'exception','source':'display_handler','value':f"{e}"}
@@ -359,7 +459,7 @@ async def display_handler(displayQ, logQ, display, display_period):
     The command handler takes in an event if available and dispatches it to the
     appropriate handler. 
 """
-async def command_handler(eventQ, logQ, diodeQ, displayQ, cmd_period):
+async def command_handler(eventQ, logQ, diodeQ, cmd_period):
     while True:
         #print("update command handler")
         try:
@@ -368,10 +468,8 @@ async def command_handler(eventQ, logQ, diodeQ, displayQ, cmd_period):
                 await diodeQ.put(cmd)
             elif cmd['event'] == 'print':
                 print(cmd['value'])
-            elif cmd['event'] == 'display':
-                await displayQ.put(cmd)
             
-            status = {'event':'status', 'source':'command_handler', 'value':f"dispatched {cmd}"}
+            status = {'event':'command-state', 'source':'command_handler', 'value':f"dispatched {cmd}"}
             await logQ.put(status)
 
         except:
@@ -448,17 +546,17 @@ async def main():
     telemetryQ = queue.Queue()
     logQ = queue.Queue()
     diodeQ = queue.Queue()
-    displayQ = queue.Queue()
     i2cSBL = asyncio.Lock()
+    stateL = asyncio.Lock()
 
     print("set update periods")
     # set update periods in seconds
     com_period = 0.1
-    gps_period = 1.0
-    imu_period = 1.0
+    gps_period = 0.5
+    imu_period = 0.5
     cmd_period = 0.1
-    diode_period = 1.0
-    display_period = 1.0
+    diode_period = 0.25
+    display_period = 0.25
  
     # connect data path via USB, expects serial handler device on other end
     # some of this happens in boot.py, timeouts get set here...
@@ -477,11 +575,11 @@ async def main():
 
     print("setup asyncio tasks")
     clients = [asyncio.create_task(usb_communications(telemetryQ, eventQ, logQ, usb_serial, com_period))]
-    clients.append(asyncio.create_task(gps_telemetry(telemetryQ, logQ, i2cSBL, gps, gps_period)))
-    clients.append(asyncio.create_task(imu_telemetry(telemetryQ, logQ, i2cSBL, imu, imu_period)))
-    clients.append(asyncio.create_task(command_handler(eventQ, logQ, diodeQ, displayQ, cmd_period)))
-    clients.append(asyncio.create_task(noise_diode_handler(diodeQ, logQ, i2cSBL, diode_gpio, diode_period)))
-    clients.append(asyncio.create_task(display_handler(displayQ, logQ, display, display_period)))
+    clients.append(asyncio.create_task(gps_telemetry(telemetryQ, logQ, i2cSBL, stateL, gps, gps_period)))
+    clients.append(asyncio.create_task(imu_telemetry(telemetryQ, logQ, i2cSBL, stateL, imu, imu_period)))
+    clients.append(asyncio.create_task(command_handler(eventQ, logQ, diodeQ, cmd_period)))
+    clients.append(asyncio.create_task(noise_diode_handler(diodeQ, logQ, i2cSBL, stateL, diode_gpio, diode_period)))
+    clients.append(asyncio.create_task(display_handler(logQ, stateL, display, display_period)))
 
     print("run")
 

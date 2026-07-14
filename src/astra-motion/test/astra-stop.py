@@ -1,15 +1,14 @@
 """
-    astra-position.py
+    astra-stop.py
 
-    Command line routine to connect to antenna controller and print the position.
+    Command line routine to connect to antenna controller and stop the mount from moving.
 
-    Currently defaults to a direct serial connection.
+    Currently defaults to a direct serial connection. 
 
 """
 import argparse
 import os
 import sys
-import time
 import traceback
 import azgti
 
@@ -20,9 +19,9 @@ def parse_command_line():
     formatter = argparse.RawDescriptionHelpFormatter(scriptname)
     width = formatter._width
 
-    title = "astra-position"
+    title = "astra-stop"
     copyright = "Copyright (c) 2026 Massachusetts Institute of Technology"
-    shortdesc = "Synchronize orienation of the ASTRA telescope mount."
+    shortdesc = "Stop motion of the ASTRA telescope mount."
     desc = "\n".join(
         (
             "*" * width,
@@ -51,23 +50,32 @@ def parse_command_line():
     )
 
     parser.add_argument(
-        "-c",
-        "--count",
-        dest="count",
-        default=10,
-        type=int,
-        help="Number of times to print out the position.",
+        "-az",
+        "--azimuth",
+        dest="az",
+        default=0.0,
+        type=float,
+        help="The antenna azimuth for synchronization.",
     )
 
     parser.add_argument(
-        "-p",
-        "--period",
-        dest="period",
-        default=1.0,
+        "-el",
+        "--elevation",
+        dest="el",
+        default=0.0,
         type=float,
-        help="Delay period between updates in floating point seconds. Default is 1.0 seconds.",
+        help="The antenna elevation for synchronization.",
     )
-
+    
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        dest="force",
+        default=False,
+        help="Use force stop instead of axis stop command.",
+    )
+    
     parser.add_argument(
         "-v",
         "--verbose",
@@ -98,7 +106,7 @@ if __name__ == "__main__":
         print("options: {0}".format(options))
 
 
-    # connect
+    # connect to serial, add mqtt later
     try:
         # This is an initial test. We will ultimately do this via the 
         # motion control service which will also provide an API to isolate
@@ -112,20 +120,29 @@ if __name__ == "__main__":
         traceback.print_exc()
         sys.exit()
 
-    n = 0
+    # pull az and el
+    az = options.az 
+    el = options.el
 
-    while n < options.count:
+    if az < -359.9 or az > 359.9:
+        print("Azimuth outside valid range, default to 0.0")
+        az = 0.0
+    
+    if el < -5.0:
+        print("Elevation is below zero, level unit and resync.")
+        print("default to elevation 0.0")
+        el = 0.0
 
-        azp, altp = mount.get_position()
+    if el > 180.0:
+        print("Antenna cannot point greater than 180.0 elevation (over top), default to elevation 0.0")
+        el = 0.0
 
-        print(f"{azp:.2f} deg AZ / {altp:.2f} ALT deg")
+    # synchronize position
+    if options.force:
+        mount.force_stop_motion()
+    else:
+        mount.stop_motion(azgti.Axis.BOTH)
 
-        if options.verbose:
-            azc = mount.get_axis_position_counts(azgti.Axis.AZ)
-            altc = mount.get_axis_position_counts(azgti.Axis.ALT)
-            print(f"{azc:.2f} counts AZ / {altc:.2f} counts ALT")
-
-
-        time.sleep(options.period)
-
-        n += 1
+    if options.verbose:
+        (az,el) = mount.get_position()
+        print(f"stop position {az:05.2f}AZ {el:05.2f}ALT")
