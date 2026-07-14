@@ -9,7 +9,7 @@ The assembled Intel / AMD NUC computer is needed for this step. A monitor, keybo
 
 ## Power Supply Notes
 
-It can be necessary to use a fully USB-PD compliant power supply for these steps. This is necessary due to the default behavior of the hardware where USB PD and an appropriate cable provide device power. Not all USB cables and power sources will be capable of the needed supply voltage range. 
+It can be necessary to use a fully USB-PD compliant power supply for these steps. This is necessary due to the default behavior of the hardware where USB PD and an appropriate cable provide device power. Not all USB cables and power sources will be capable of the needed supply voltage range. NEEDS MORE INFO HERE Add link to acceptable cable examples or image
 
 ## Drive Dock
 
