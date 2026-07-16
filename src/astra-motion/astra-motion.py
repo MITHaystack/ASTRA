@@ -192,10 +192,14 @@ class AstraAntennaState:
                 standby - take no action without a command, assume on target
                 goto - {'target_az':degrees,'target_alt':degrees,'az_rate':deg/sec,'alt_rate':deg/sec}
                 radec - {'target_ra':degrees,'target_dec':degrees,'track':True/False}
-                object - {'object_name':'sun','moon',}
                 slew - {'az_ccw':True/False, 'alt_ccw':True/False, 'az_rate':deg/sec,'alt_rate':deg/sec, time_limit:seconds}
                     Note : Slew commands will stop on a direction change in motion, time_limit expiration, or motion limits
-                solar - {}
+                object - {'object_type':'planet' | , 'object_name':'planet name' | 'moon' | 'sun'} - uses de440s.bsp from JPL}
+                object - {'object_type':'hipparcos','object_name':'name from catalog' - needs online access for download}
+                sgp4 - {'ephemeris_type':'tle'|'omm','object_name':'name','tle1':'line1','tle2':'line2' or 'omm_json':json string of omm data}
+                slew - {'az_ccw':True/False, 'alt_ccw':True/False, 'az_rate':deg/sec,'alt_rate':deg/sec, time_limit:seconds}
+                    Note : Slew commands will stop on a direction change in motion, time_limit expiration, or motion limits
+                Horizons - {} ; API call using astroquery that requires internet access, use JPL Horizons data
 
         """
         self.target = {
