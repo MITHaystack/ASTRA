@@ -117,7 +117,7 @@ def _to_decimal_year(dt: datetime) -> float:
     return dt.year + (year_elapsed / year_duration)
 
 def _to_altaz_from_radec(tstamp, lat, lon, alt, ra_hr,ra_min,ra_sec,dec):
-    print("1")
+    print("1", ra_hr, ra_min, ra_sec, dec)
     target = SkyCoord(ra=f"{ra_hr}h{ra_min}m{ra_sec}s",dec=dec,frame='icrs')
     print("2")
     location = EarthLocation(lon=lon*u.deg,lat=lat*u.deg,height=alt*u.m)
