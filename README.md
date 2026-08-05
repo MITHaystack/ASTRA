@@ -48,8 +48,8 @@ Our lessons are currently under development and will be released after we comple
 
 ### Introduction
 - [What is ASTRA?](docs/lessons/astra-intro-overview)
-- [Observing with ASTRA](docs/lessons/astra-intro-observing)
 - [ASTRA Setup and Transport](docs/lessons/astra-setup/README.md)
+- [Observing with ASTRA](docs/lessons/astra-intro-observing)
 
 
 ### Setup and Calibration
