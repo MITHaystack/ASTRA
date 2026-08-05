@@ -1,11 +1,8 @@
-# ASTRA - Energy Unit Build
+# ASTRA - DAQ and Energy Unit Build
 
-
-## Parts
-
-## Tools
-
-## Safety
+The DAQ and Energy Unit is constructed using a plastic water tight enclosure. Different brands
+can be used if they are sufficient in size. An 18 litre / 19 quart gasket enclosure was used 
+for the initial build. 
 
 ## Procedure
 
