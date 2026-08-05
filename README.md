@@ -25,7 +25,7 @@ adjunct for lesson plans related to the electromagnetic spectrum, chemistry and 
 
 ### Example Observations
 
-ASTRA can be used to make [radio](docs/observations/radio-obs.md) and [optical](docs/observations/optical-obs.md) observations. This includes
+ASTRA can be used to make [radio](docs/lessons/radio-obs.md) and [optical](docs/lessons/optical-obs.md) observations. This includes
 radio measurement of the hydrogen line, galactic structure and rotation. Optical imaging of the Sun, Moon, star clusters, and major Nebulae also 
 enables a direct comparison of radio signatures with wide field of view imaging. 
 
@@ -33,12 +33,10 @@ enables a direct comparison of radio signatures with wide field of view imaging.
 
 ASTRA can be constructed by a small group using off the shelf components, 3D printed brackets and enclosures, and open source software. 
 
-- [Components](docs/hardware/components-overview.md)
-- [Assembly](docs/hardware/assembly-overview.md)
-- [Software Configuration](docs/software/software-overview.md)
-- [Integration and Testing](docs/testing/testing-overview.md)
-- [Focusing and Calibration](docs/testing/focusing-cal-overview.md)
-- [Environmental](docs/testing/environmental-overview.md)
+- [Components](docs/bom/astra-bom.csv)
+- [Assembly](docs/hardware/)
+- [Software Configuration](docs/system/system.md)
+- [Environmental](docs/system/environmental-overview.md)
 - [Prior Versions](docs/astra-prior-version-archive.md)
 
 Although many alternative components exist, the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
