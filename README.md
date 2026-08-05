@@ -16,11 +16,11 @@ adjunct for lesson plans related to the electromagnetic spectrum, chemistry and 
 
 - 70 cm diameter [Discovery Dish](https://www.crowdsupply.com/krakenrf/discovery-dish) radio antenna
 - Hydrogen Line (1420 MHz) feed and software radio
-- 100mm optical F/2.8 wide field of view optical telescope 
+- 60mm optical F/4.5 wide field of view optical telescope 
 - 8 Mega Pixel CCD (uncooled) for optical imaging
 - Goto Telescope Mount 
-- Integrated Navigation (GNSS?/GPS), Inertial Measurement (IMU), and Orientation (Magnetometer)
-- Battery Operation (24hr+)
+- Integrated Navigation (GPS), Inertial Measurement (IMU), and Orientation (Magnetometer)
+- Battery Operation (12hr+)
 - Rolling Base / Cart
 
 ### Example Observations
