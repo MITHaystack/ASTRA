@@ -1,1 +1,87 @@
 ## ASTRA Setup and Transport
+
+## Parts
+ASTRA can be broken down into several different units. They are:
+### - Antenna Interface (AI) and dish
+![img](img/ai_dish.jpg)
+In the AI, there is a GPS, IMU, bias tee, noise diode and rp2040 controller. The GPS provides location and time data. The IMU provides orientation and magnetic field data. the bias tee provides power to the antenna. The noise diode connects to the smaller antenna inside the dish, and when activated sends out noise to calibrate the antenna and to test to see if the antenna can see the outside world. THe rp2040 controls all of these except for the bias tee, which is always on. The dish focuses the light to the feed, allowing for the light to be converted into electricity.
+
+### - Tripod and mount
+![img](img/tripod.jpg)
+The mount allows for automated movement of the telescopes.
+
+### - Optical telescope, counterweight, and CCD
+![img](img/ccd.jpg)
+THe optical telescope focuses light, magnifying the sky. The counterweight balances the load on the mount, reducing motor strain and risk of tipping. The CCD is effectively a camera without a lens.
+
+### - Energy Box
+![img](img/energy_box.jpg)
+The energy box contains a battery, software defined radio, wifi antenna, and main computer. THe battery provides power to the entire unit. The software defined radio takes the analog signal from the antenna and converts it into digital signal. The wifi antenna broadcasts a wifi network.
+### - Base
+![img](img/base.jpg)
+Allows for moving of the entire unit, and has adjustable feet for ease of leveling. 
+
+
+## Setup:
+1. Place the base in or near the location where you will be observing with ASTRA.
+
+2. Disconnect the s-clips from each other on the base.
+
+3. Place the legs of the tripod into the half cups of the plastic plate on the base. Connect the s-clips to the bolts attached to the legs of the tripod. Tighten the cam locks.
+![img](img/tripod_tied_down.jpg)
+
+4. Screw on the rod with the optical telescope, counterweight, and CCD.
+![img](img/ccd_attached.jpg)
+
+5. Slide the AI's dovetail rail into the mount, almost as far as it will go, and tighten the set screw on the mount.
+![img](img/ai_attached.jpg)
+
+6. Slide the Energy Unit onto the base. Face the side with the ports away from the tripod leg that the box was inserted towards. You may need to push the tie downs a little bit.
+![img](img/energy_box_in.jpg)
+
+7. Route the cables. For the cables from the Energy Unit, make sure that most of the slack in the cables is on the mount side of the cable ties. To prevent the ASTRA unit from disconnecting its CCD or mount, make sure that there is some slack in those cables.
+
+### Cable Routes:
+
+    a. Mount DC cable
+![img](img/route_mount_dc.jpg)
+
+    b. AI USB-C cable
+![img](img/route_ai_usbc.jpg)
+
+    c. Energy Unit coaxial cable
+![img](img/route_energy_box_coax.jpg)
+
+    d. CCD USB-C cable
+![img](img/route_ccd_usbc.jpg)
+
+    e. Mount control USB cable
+![img](img/route_mount_usb.jpg)
+
+    f. All
+![img](img/route_all.jpg)
+
+8. Place a level on the top of the AI and make sure it is level. Using an allen key, loosen the screw that holds the alignment of the optical telescope. Level the telescope and tighten the screw again.
+
+
+
+## Takedown
+1. Disconnect all cables that go between different modules. There should be four on the bottom of the AI, two on the mount, two on the Energy Box, and one on the CCD. Keep the cable ties where they are on the unit.
+![img](img/cables_removed_3.jpg)
+
+2. Remove the optical telescope, counterweight, and CCD by unscrewing the counterweight bar.
+![img](img/ccd_removed.jpg)
+
+3. Remove the AI and dish by unscrewing the set screw in the mount and sliding the whole setup out.
+![img](img/ai_dish_removed.jpg)
+
+4. Slide out the Energy Unit.
+![img](img/energy_box_removed.jpg)
+
+5. Disconnect the tripod and mount from the base by removing the rope from the jaws of the cam lock to loosen the ropes, and then removing the s-clips from the tripod.
+
+6. Prepare the base for travel by connecting the s-clips to each other, roughly in the center of the base, and tightening the cam locks.
+![img](img/base.jpg)
+
+7. Arrange in your vehicle.
+![img](img/in_car.jpg)
