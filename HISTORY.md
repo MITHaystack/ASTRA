@@ -16,3 +16,10 @@ by Joe Lind.
 
 ASTRA leverages a number of other commercial and open source projects. 
 
+# ASTRA Use of Artificial Intelligence
+
+The ASTRA user interface has made use of the Claude Sonnet 4.6 model for vibe coding of the astra-ui portion of
+the code base. This coding was guided by the Nice Vibes AI coding agent guidelines for the python NiceGUI
+user interface framework. Other code used in ASTRA has been hand developed. 
+
+

@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "astra"
+version = "0.1.0"
+description = "Automated Small Telescope for Radio Astronomy"
+authors = ["Frank Lind <flind@mit.edu>"]
+readme = "README.md"
+
+packages = [
+    { include = "astradata", from = "src" },
+    { include = "azgti", from = "src"},
+    { include = "astra-interface", from = "src" },
+    { include = "astra-motion", from = "src" },
+    { include = "astra-db", from = "src"},
+    { include = "astra-ui", from = "src" }
+]
+
+[tool.poetry.dependencies]
+python     = "^3.12"
+loguru     = "^0.7.3"
+nicegui    = "^2.0"
+numpy      = "^1.26"
+scipy      = "^1.12"
+plotly     = "^5.0"
+pillow     = "^10.0"
+matplotlib = "^3.8"
+astropy    = "^7.2"
+starplot   = "^0.20.4"
+skyfield   = "^1.46"
+pyserial   = "^3.5"
+msgpack    = "^1.2.1"
+aiomqtt    = "^2.0"
+pymongo    = "^4.0"
+pytz       = ">=2024.1"
+pygeomag   = "^1.1"
+pyadi-iio = "^0.0.21" 
+pylibiio   = {version = ">=0.23"}
+digital-rf = {version = "^2.6"}
+
+[tool.poetry.extras]
+sdr = ["pylibiio","pyadi-iio"]
+drf = ["digital-rf"]
+
+[tool.poetry.scripts]
+astra-interface = "astra-interface.main:main" # AI serial to MQTT interface
+astra-motion = "astra-motion.astra-motion:main" # motion control service azgti serial and MQTT to Motion Control
+astra-ui = "astra-ui.main:main" # graphical user interface
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

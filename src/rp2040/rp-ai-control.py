@@ -18,6 +18,7 @@ import queue
 import usb_cdc
 import json
 import math
+import traceback
 
 # devices - GNSS / GPS, 9 DoF IMU, GPIO
 import adafruit_gps
@@ -32,10 +33,11 @@ import digitalio
 
 import adafruit_displayio_sh1107
 
-VERSION = "v1.0.0a-20260530"
+VERSION = "v1.0.0b-20260802"
 
-
-ai_state = {'event':'ai-state',
+# Global state for use in the display routine
+ai_state = {'group':'ai-state',
+            'event':'status',
             'utc':"2000-01-01T00:00:00Z",
             'latitude':0.0,
             'longitude':0.0,
@@ -51,24 +53,54 @@ ai_state = {'event':'ai-state',
     Convert quaternion to azimuth / altitude
     Assumes a sensor orientation with board top upward in case and adafruit logo to back near cover side.
 """
-def quat_to_az_el(q):
+def quat_to_az_el(q, cal_info):
     w,x0,y0,z0 = q
-    # rotate to IMU coordinates
-    x = x0
-    y = y0
-    z = z0
+    scale = math.sqrt(w*w+x0*x0+y0*y0+z0*z0)
+    # rotate to IMU coordinates and scale
+    x = x0 / scale
+    y = y0 / scale
+    z = z0 / scale
     # compute vectors
-    # Assumes a right-handed coordinate system where:
-    #   +x is Right
-    #   +y is Forward
-    #   +z is Up
     #
-    vx = 2 * (x * y + w * z)
-    vy = w * w + y * y - x * x - z * z
-    vz = 2 * (y * z - w * x)
-    # compute angles
-    azimuth = -math.degrees(math.atan2(vx, vy))
-    altitude = math.degrees(math.asin(vz / math.sqrt(vx*vx + vy*vy + vz*vz)))
+    # note the adafruit bno055 coordinates are swapped
+    # for east and north this flips everything
+    #
+    # transformed boresight vector is 
+    Vx = 1 - 2.0 * (y**2 + z**2)
+    Vy = 2.0 * (x*y + w*z)
+    Vz = 2.0 * (x*z - w*y)
+
+    # compute altaz    
+    altitude = math.degrees(math.asin(Vz))
+    azimuth = math.degrees(math.atan2(Vx,Vy))
+    # Assumes a right-handed coordinate system where:
+    #   +x is telescope boresight
+    #   +y is left of antenna
+    #   +z is up from gravity
+    #
+    # The IMU actually starts in relative mode so
+    # this makes the initial coordinates align when
+    # the mount is at 0.0 AZ 0.0 ALT.
+    #
+    # After the IMU (BNO055) sees enough motion it
+    # will lock in the gyros, accelerometer, 
+    # and magnetometer. We generally are not generating
+    # linear motion so the accelerometer will often
+    # not lock. When the magnetometer locks the unit will
+    # reorient its idea of North relative to the -y axis. 
+    # Our convention az +x along north for a 0.0, 0.0 
+    # pointing.
+    #
+    # We must detect and correct prior to lock. 
+    #
+
+    # check calibration state and rotate azimuth
+    try:
+        if cal_info[0] == 0 and cal_info[3] == 0:
+            azimuth -= 90.0
+    except:
+        pass
+
     return (azimuth, altitude)
     
     #vx = 1.0 - 2.0 * y**2 - 2.0 * z**2
@@ -102,7 +134,7 @@ def connect_gps(logQ):
         gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
         gps.send_command(b"PMTK220,1000")
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_gps','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-gps-state','source':'connect_gps','value':f"{e}"}
         logQ.put(e_event)
         gps = None
         
@@ -114,9 +146,10 @@ def connect_gps(logQ):
     sent back to the host. 
 """
 def telemetry_gps(gps):
-    #print("get GPS update")
-    gps.update()
-
+    
+    if not gps.update():
+        return
+   
     gps_utc_time = "{:02}-{:02}-{:02}T{:02}:{:02}:{:02}Z".format(  
                     gps.timestamp_utc.tm_year,  
                     gps.timestamp_utc.tm_mon,  
@@ -126,7 +159,8 @@ def telemetry_gps(gps):
                     gps.timestamp_utc.tm_sec) # no time but UTC in ISO8601
 
     gps_data = {
-        'event' : 'ai-gps-data',
+        'group' : 'astra-gps-data',
+        'event' : 'telemetry',
         'utc'   : gps_utc_time,
         'adata' : gps.isactivedata,
         'fix'   : gps.has_fix,
@@ -160,7 +194,7 @@ def connect_imu(logQ):
         imu.mode = adafruit_bno055.NDOF_MODE
 
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_imu','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-imu-state','source':'connect_imu','value':f"{e}"}
         logQ.put(e_event)
         imu = None
     
@@ -176,14 +210,16 @@ def telemetry_imu(imu):
     # read at once to keep consistent
     euler = imu.euler
     quaternion = imu.quaternion
-    pointing = quat_to_az_el(quaternion)
+    cal_info = imu.calibration_status
+    pointing = quat_to_az_el(quaternion, cal_info)
     # need to figure out if this has declination to remove or not...
 
     imu_data = {
-        'event' : 'ai-imu-data',
+        'group' : 'astra-imu-data',
+        'event' : 'telemetry',
         'temperature' : imu.temperature,
         'calibrated' : imu.calibrated,
-        'cal-status' : imu.calibration_status,
+        'cal_status' : cal_info,
         'euler'      : euler,
         'pointing'   : pointing,
         'gravity'    : imu.gravity,
@@ -205,7 +241,7 @@ def connect_gpio(logQ):
         i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
         diode_gpio = adafruit_pcf8574.PCF8574(i2c)
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_gpio','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-gpio-state','source':'connect_gpio','value':f"{e}"}
         logQ.put(e_event)
         diode_gpio = None
     
@@ -224,6 +260,10 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, stateL, gps,gps_period):
         try:
             async with i2cSBL:
                 gps_t = telemetry_gps(gps)
+                if gps_t is None:
+                    await asyncio.sleep(gps_period)
+                    continue    
+
             await telemetryQ.put(gps_t)
             # update global AI state
             async with stateL:
@@ -236,7 +276,7 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, stateL, gps,gps_period):
                 ai_state['fix'] = gps_t['fix']
             
         except Exception as e:
-            e_event = {'event':'exception','source':'gps_telemetry','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-gps-state','source':'gps_telemetry','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(gps_period)
@@ -246,7 +286,7 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, stateL, gps,gps_period):
     and pushes it to the telemetry queue. Errors are logged to 
     the log queue. 
 """
-async def imu_telemetry(telemetryQ,logQ,i2cSBL,stateL, imu,imu_period):
+async def imu_telemetry(telemetryQ,logQ,i2cSBL,stateL,imu,imu_period):
     global ai_state
     while True:
         #print("update imu_telemetry")
@@ -254,18 +294,31 @@ async def imu_telemetry(telemetryQ,logQ,i2cSBL,stateL, imu,imu_period):
         try:
             async with i2cSBL:
                 imu_t = telemetry_imu(imu)
+                
+                if imu_t is None:
+                    await asyncio.sleep(imu_period)
+                    continue
+
             await telemetryQ.put(imu_t)
  
             # update global AI state
             async with stateL:
                 #print("update imu", imu_t)
                 ai_state['temperature'] = imu_t['temperature']
-                ai_state['calibrated'] = imu_t['calibrated']
                 ai_state['pointing'] = imu_t['pointing']
+
+                if imu_t['calibrated']:
+                    #print("full calibration")
+                    ai_state['calibrated'] = 'CAL'
+                else:
+                    res = "".join("+" if val >= 2 else "-" for val in imu_t['cal_status'])
+                    ai_state['calibrated'] = res
+                    #print("cal val" ,res)
 
  
         except Exception as e:
-            e_event = {'event':'exception','source':'imu_telemetry','value':f"{e}"}
+            #traceback.print_exec()
+            e_event = {'event':'exception','group':'astra-imu-state','source':'imu_telemetry','value':f"{e}"}
             await logQ.put(e_event)
  
         await asyncio.sleep(imu_period)
@@ -288,17 +341,17 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, displayL, diode_gpio, diode_
         try:
             try:
                 ndata = diodeQ.get_nowait()
-                if ndata['value'] == 'ENABLE':
+                if ndata['mode'] == 'ENABLE':
                     diode_state = 'ENABLE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"enable"}
-                elif ndata['value'] == 'DISABLE':
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"enable"}
+                elif ndata['mode'] == 'DISABLE':
                     diode_state = 'DISABLE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"disable"}
-                elif ndata['value'] == 'PULSE':
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"disable"}
+                elif ndata['mode'] == 'PULSE':
                     diode_state = 'PULSE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"pulse"}
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"pulse"}
                 else:
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
 
                 await logQ.put(status)
 
@@ -328,7 +381,7 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, displayL, diode_gpio, diode_
                 ai_state['diode-state'] = diode_state
             
         except Exception as e:
-            e_event = {'event':'exception','source':'noise_diode_handler','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-diode-state','source':'noise_diode_handler','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(diode_period)
@@ -354,7 +407,7 @@ def connect_display(logQ):
         display = adafruit_displayio_sh1107.SH1107(display_bus, width=WIDTH, height=HEIGHT) 
        
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_display','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-display-state','source':'connect_display','value':f"{e}"}
         logQ.put(e_event)
         
     return display
@@ -417,7 +470,7 @@ async def display_handler(logQ, displayL, display, display_period):
                     async with displayL:
                         #print(ai_state['calibrated'])
                         if ai_state['calibrated']:
-                            cinfo = 'CAL'
+                            cinfo = ai_state['calibrated']
                         else:
                             cinfo = '   '
 
@@ -446,11 +499,11 @@ async def display_handler(logQ, displayL, display, display_period):
             display_counter += 1
 
             # report handler status
-            status = {'event':'display-state', 'source':'display_handler', 'value':f"({display_state},{display_counter})"}
+            status = {'event':'status','group':'astra-display-state','source':'display_handler', 'value':f"({display_state},{display_counter})"}
             await logQ.put(status)
 
         except Exception as e:
-            e_event = {'event':'exception','source':'display_handler','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-display-state','source':'display_handler','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(display_period)
@@ -464,12 +517,12 @@ async def command_handler(eventQ, logQ, diodeQ, cmd_period):
         #print("update command handler")
         try:
             cmd = eventQ.get_nowait()
-            if cmd['event'] == 'noise-diode':
+            if cmd['group'] == 'astra-ai-diode-cmd':
                 await diodeQ.put(cmd)
-            elif cmd['event'] == 'print':
+            elif cmd['group'] == 'astra-ai-print-cmd':
                 print(cmd['value'])
             
-            status = {'event':'command-state', 'source':'command_handler', 'value':f"dispatched {cmd}"}
+            status = {'event':'status', 'group':'astra-command-state', 'source':'command_handler', 'value':f"dispatched {cmd}"}
             await logQ.put(status)
 
         except:
@@ -530,7 +583,7 @@ async def usb_communications(telemetryQ, eventQ, logQ, usb_serial, com_period):
         except ValueError as e:
                 print(f"JSON syntax error: {line}")
         except Exception as e:
-                e_event = {'event':'exception','source':'usb_communications','value':f"{e}"}
+                e_event = {'event':'exception','group':'astra-usb-state','source':'usb_communications','value':f"{e}"}
                 await logQ.put(e_event)
 
         await asyncio.sleep(com_period)

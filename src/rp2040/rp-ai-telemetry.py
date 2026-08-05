@@ -14,7 +14,6 @@ import sys
 import traceback
 import serial
 import json
-import zmq
 import ast
 
 
@@ -69,17 +68,8 @@ def parse_command_line():
         dest="cmd",
         default=None,
         help=(
-            "Send a command to the AIU over the serial port. (e.g. {'event':'noise-diode','value':'PULSE'})"
+            "Send a command to the AIU over the serial port. (e.g. {'event':'command',group:'noise-diode-cmd','mode':'PULSE'})"
         ),
-    )
-
-    parser.add_argument(
-        "-z",
-        "--zmq",
-        action="store_true",
-        dest="zmq",
-        default=False,
-        help="Enable zeromq output of json objects received from the antenna interface unit.",
     )
 
     parser.add_argument(

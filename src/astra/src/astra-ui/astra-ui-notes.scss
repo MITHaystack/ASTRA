@@ -1,0 +1,1808 @@
+MQTTPointingClient (daemon thread)
+  │  paho-mqtt  → broker  OR  built-in sweep simulation
+  └─ _on_mqtt_pointing(alt, az) → writes to shared _pointing dict (GIL-safe)
+
+SkyRenderer (daemon thread per render)
+  │  starplot HorizonPlot (BLUE_LIGHT + MAP style)
+  │    ├─ stars · milky_way · open_clusters · nebula
+  │    ├─ constellation_lines / labels
+  │    ├─ alt-az gridlines (p.gridlines())
+  │    └─ RA/Dec gridlines (probed by attribute name, version-safe)
+  └─ PNG cached in memory → served via GET /sky/chart.png
+
+NiceGUI timer @ 1 Hz
+  ├─ reads _pointing dict for new MQTT az/alt
+  ├─ if |Δaz| > 1° or |Δalt| > 1°  AND  cooldown ≥ 12 s  → render_async()
+  ├─ polls render_count to detect completion
+  └─ cache-busts sky_img.set_source("/sky/chart.png?t=…")
+
+
+  CameraEngine (background thread)
+  │
+  ├─ capture_single()  ← blocking, run via asyncio.run_in_executor
+  │    raw → _auto_stretch → _debayer (2×2 bin) → _apply_wb → JPEG
+  │
+  └─ _stream_loop()    ← daemon thread, fps-limited
+       └─ stores FrameData in _latest_frame (thread-safe lock)
+
+FastAPI route  GET /camera/frame.jpg
+  └─ serves latest FrameData.jpeg_bytes (no-cache headers)
+
+NiceGUI timer @ 20 Hz
+  ├─ only fetches when frame_index changes  (no wasted renders)
+  ├─ ui.interactive_image.set_source("/camera/frame.jpg?t=…")  ← HTTP, not WS
+  ├─ histogram updated @ 5 Hz  (every 4th tick)
+  └─ stats + badges updated every tick
+
+  AntennaCommander  (module singleton)
+  │
+  ├─ MQTT path (paho connected)
+  │    publish → astra/motion/command   (JSON commands)
+  │    subscribe ← astra/motion/telemetry (JSON telemetry)
+  │
+  └─ Simulation path (broker unreachable)
+       ├─ queue.Queue  ← receives commands from UI
+       ├─ physics thread @ 10 Hz  (slew / goto state machine)
+       └─ pre-populated 30 min history at startup
+
+MotionHistoryClient  (owned by commander)
+  ├─ MongoDB  (astra.motion) — primary if reachable
+  └─ deque(50 000)  — always maintained as hot fallback
+
+NiceGUI timers (per browser session)
+  ├─ 200 ms  _slew_tick     → resend slew command while D-pad held
+  └─ 500 ms  _refresh       → update badges + position display
+       └─ run_in_executor   → query history (non-blocking)
+            └─ _do_update_plots  (4 plotly charts)
+
+            Let me check the NiceGUI docs for the button hold pattern, async timers, and plotly before writing.
+<function_calls>
+<invoke name="mcp_nice_vibes_get_nicegui_docs">
+<parameter name="topic">button on mousedown mouseup custom events hold</parameter>
+</invoke>
+</function_calls>
+<function_calls>
+<invoke name="mcp_nice_vibes_get_nicegui_docs">
+<parameter name="topic">timer async run_executor non-blocking</parameter>
+</invoke>
+</function_calls>
+<function_calls>
+<invoke name="mcp_nice_vibes_get_nicegui_docs">
+<parameter name="topic">plotly figure update data xaxis date type</parameter>
+</invoke>
+</function_calls>
+<function_calls>
+<invoke name="mcp_nice_vibes_check_port">
+<parameter name="port">8080</parameter>
+</invoke>
+</function_calls>
+
+Good — port clear. Writing all files now.
+
+---
+
+**`pyproject.toml`** — add `pymongo`
+```toml
+[tool.poetry]
+name = "astra"
+version = "0.1.0"
+description = "Automated Small Telescope for Radio Astronomy"
+authors = ["Frank Lind <flind@mit.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python     = "^3.12"
+nicegui    = "^2.0"
+numpy      = "^1.26"
+plotly     = "^5.0"
+scipy      = "^1.12"
+pillow     = "^10.0"
+matplotlib = "^3.8"
+starplot   = "^0.9"
+skyfield   = "^1.46"
+paho-mqtt  = "^2.0"
+pymongo    = "^4.0"
+digital-rf = {version = "^2.6", optional = true}
+
+[tool.poetry.extras]
+drf = ["digital-rf"]
+
+[tool.poetry.scripts]
+astra = "astra.main:main"
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+```
+
+---
+
+**`astra/antenna/__init__.py`**
+```python
+```
+
+---
+
+**`astra/antenna/mongo_history.py`**
+```python
+"""
+MotionHistoryClient
+===================
+Persists and queries antenna motion telemetry.
+
+Primary backend : MongoDB  (db=``astra``, collection=``motion``)
+Fallback        : thread-safe in-memory deque  (~14 h at 1 Hz)
+
+Document schema::
+
+    {
+        "t":        datetime (UTC),
+        "az":       float,   # degrees
+        "alt":      float,   # degrees
+        "az_rate":  float,   # deg / s
+        "alt_rate": float,   # deg / s
+    }
+"""
+
+from __future__ import annotations
+
+import threading
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+_PYMONGO_OK = False
+try:
+    import pymongo              # type: ignore
+    _PYMONGO_OK = True
+except ImportError:
+    pass
+
+
+@dataclass
+class MotionHistoryConfig:
+    uri:        str = "mongodb://localhost:27017"
+    db_name:    str = "astra"
+    coll_name:  str = "motion"
+    memory_len: int = 50_000    # ≈ 14 h at 1 Hz
+
+
+class MotionHistoryClient:
+
+    def __init__(self, config: MotionHistoryConfig | None = None) -> None:
+        self.config  = config or MotionHistoryConfig()
+        self._lock   = threading.Lock()
+        self._memory: deque[dict] = deque(maxlen=self.config.memory_len)
+        self._mongo  = None
+        self._coll   = None
+        self._use_db = False
+        self._try_connect()
+
+    # ── connection ────────────────────────────────────────────────────────────
+
+    def _try_connect(self) -> None:
+        if not _PYMONGO_OK:
+            print("[motion_history] pymongo not installed — using memory buffer")
+            return
+        try:
+            client = pymongo.MongoClient(
+                self.config.uri,
+                serverSelectionTimeoutMS=2000,
+            )
+            client.server_info()                         # force connection check
+            self._mongo = client
+            self._coll  = client[self.config.db_name][self.config.coll_name]
+            self._coll.create_index("t")                 # range-query index
+            self._use_db = True
+            print(f"[motion_history] MongoDB connected: {self.config.uri}")
+        except Exception as exc:
+            print(f"[motion_history] MongoDB unavailable ({exc}) — memory buffer")
+
+    @property
+    def is_connected(self) -> bool:
+        return self._use_db
+
+    @property
+    def backend(self) -> str:
+        return "MongoDB" if self._use_db else "Memory"
+
+    # ── write ─────────────────────────────────────────────────────────────────
+
+    def record(
+        self,
+        az:       float,
+        alt:      float,
+        az_rate:  float = 0.0,
+        alt_rate: float = 0.0,
+        t:        Optional[datetime] = None,
+    ) -> None:
+        if t is None:
+            t = datetime.now(timezone.utc)
+        doc = {
+            "t":        t,
+            "az":       float(az),
+            "alt":      float(alt),
+            "az_rate":  float(az_rate),
+            "alt_rate": float(alt_rate),
+        }
+        with self._lock:
+            self._memory.append(doc)
+        if self._use_db:
+            try:
+                self._coll.insert_one({**doc})
+            except Exception as exc:
+                print(f"[motion_history] insert error: {exc}")
+
+    # ── read ──────────────────────────────────────────────────────────────────
+
+    def query(self, duration_s: float) -> dict:
+        """Return dict-of-lists for the last *duration_s* seconds."""
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=duration_s)
+
+        if self._use_db:
+            try:
+                docs = list(
+                    self._coll.find(
+                        {"t": {"$gte": cutoff}},
+                        {"_id": 0, "t": 1, "az": 1, "alt": 1,
+                         "az_rate": 1, "alt_rate": 1},
+                    ).sort("t", pymongo.ASCENDING).limit(20_000)
+                )
+                if docs:
+                    return _to_arrays(docs)
+            except Exception as exc:
+                print(f"[motion_history] query error: {exc}")
+
+        with self._lock:
+            docs = [d for d in self._memory if d["t"] >= cutoff]
+        return _to_arrays(docs)
+
+
+# ── helper ────────────────────────────────────────────────────────────────────
+
+def _to_arrays(docs: list[dict]) -> dict:
+    if not docs:
+        t = datetime.now(timezone.utc).isoformat()
+        return {"t": [t], "az": [0.0], "alt": [0.0],
+                "az_rate": [0.0], "alt_rate": [0.0]}
+    return {
+        "t":       [
+            d["t"].isoformat() if isinstance(d["t"], datetime) else d["t"]
+            for d in docs
+        ],
+        "az":       [d.get("az",       0.0) for d in docs],
+        "alt":      [d.get("alt",      0.0) for d in docs],
+        "az_rate":  [d.get("az_rate",  0.0) for d in docs],
+        "alt_rate": [d.get("alt_rate", 0.0) for d in docs],
+    }
+```
+
+---
+
+**`astra/antenna/commander.py`**
+```python
+"""
+AntennaCommander
+================
+Publishes JSON commands to  ``astra/motion/command``  and subscribes to
+telemetry from  ``astra/motion/telemetry``  over MQTT.
+
+Falls back to a full physics simulation when the broker is unreachable.
+
+Command JSON formats
+--------------------
+Slew (sent periodically while button held)::
+
+    {"cmd": "slew",      "axis": "az"|"alt", "rate": ±deg_per_s, "t": …}
+
+Stop::
+
+    {"cmd": "stop", "t": …}
+
+Set rate limit::
+
+    {"cmd": "set_rate",  "axis": "az"|"alt", "rate": deg_per_s,  "t": …}
+
+Goto AltAz::
+
+    {"cmd": "goto_altaz", "az": deg, "alt": deg, "t": …}
+
+Goto RaDec::
+
+    {"cmd": "goto_radec", "ra_h": int, "ra_m": int, "ra_s": float,
+     "dec_deg": float, "t": …}
+
+Telemetry JSON received::
+
+    {"az": deg, "alt": deg, "az_rate": deg/s, "alt_rate": deg/s,
+     "status": str, "t": epoch}
+"""
+
+from __future__ import annotations
+
+import json
+import queue
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+
+import numpy as np
+
+_PAHO_OK = False
+_PAHO_V2 = False
+try:
+    import paho.mqtt.client as _mqtt_mod   # type: ignore
+    _PAHO_OK = True
+    try:
+        _ = _mqtt_mod.CallbackAPIVersion.VERSION2
+        _PAHO_V2 = True
+    except AttributeError:
+        pass
+except ImportError:
+    pass
+
+
+# ── configuration ─────────────────────────────────────────────────────────────
+
+@dataclass
+class AntennaConfig:
+    broker_host: str  = "localhost"
+    broker_port: int  = 1883
+    cmd_topic:   str  = "astra/motion/command"
+    tel_topic:   str  = "astra/motion/telemetry"
+    keepalive:   int  = 60
+    force_sim:   bool = False
+
+
+# ── telemetry snapshot (value-type, copyable) ─────────────────────────────────
+
+@dataclass
+class TelemetrySnapshot:
+    az:       float = 180.0
+    alt:      float =  45.0
+    az_rate:  float =   0.0
+    alt_rate: float =   0.0
+    status:   str   = "idle"
+    epoch:    float =   0.0
+    fresh:    bool  = False    # cleared by consumer after each read
+
+
+# ── commander ─────────────────────────────────────────────────────────────────
+
+class AntennaCommander:
+    """
+    Thread-safe MQTT antenna command publisher + telemetry consumer.
+
+    One instance is shared across all browser sessions (module singleton).
+    """
+
+    _SIM_DT     = 0.10   # physics tick, seconds
+    _SIM_RECORD =  5     # record to history every N ticks  (every 0.5 s)
+
+    def __init__(self, config: AntennaConfig | None = None) -> None:
+        self.config = config or AntennaConfig()
+
+        # Lazy-import avoids circular dependency at load time
+        from astra.antenna.mongo_history import MotionHistoryClient
+        self.history = MotionHistoryClient()
+
+        self._lock        = threading.Lock()
+        self._tel         = TelemetrySnapshot()
+
+        # MQTT
+        self._client      = None
+        self._connected   = False
+        self._simulating  = False
+        self._running     = False
+
+        # Simulation physics state
+        self._sim_az            = 180.0
+        self._sim_alt           =  45.0
+        self._sim_az_rate       =   0.0
+        self._sim_alt_rate      =   0.0
+        self._sim_mode          = "idle"
+        self._sim_tgt_az        = 180.0
+        self._sim_tgt_alt       =  45.0
+        self._sim_max_az_rate   =   1.0
+        self._sim_max_alt_rate  =   1.0
+        self._sim_tick_n        =   0
+        self._sim_thread: Optional[threading.Thread] = None
+        self._cmd_q: queue.Queue = queue.Queue()
+
+        # Callback fired from MQTT/sim thread with (az, alt, az_rate, alt_rate)
+        self._on_telemetry: Optional[Callable] = None
+
+        # Pre-populate history so plots show data immediately
+        self._prepopulate_history()
+
+    # ── history pre-population ────────────────────────────────────────────────
+
+    def _prepopulate_history(self) -> None:
+        """30 min of smooth random-walk history — gives plots instant content."""
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        n   = 360                  # 360 × 5 s = 30 min
+        rng = np.random.default_rng(seed=99)
+        az = self._sim_az
+        alt = self._sim_alt
+        az_r = alt_r = 0.0
+        for i in range(n):
+            t     = now - timedelta(seconds=(n - i) * 5)
+            az_r  = float(np.clip(az_r  + rng.normal(0, 0.025), -0.40, 0.40))
+            alt_r = float(np.clip(alt_r + rng.normal(0, 0.010), -0.15, 0.15))
+            az    = (az  + az_r  * 5) % 360.0
+            alt   = float(np.clip(alt + alt_r * 5, 5.0, 85.0))
+            self.history.record(az, alt, az_r, alt_r, t)
+        self._sim_az  = az
+        self._sim_alt = alt
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def set_on_telemetry(self, fn: Callable) -> None:
+        self._on_telemetry = fn
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+    @property
+    def is_simulating(self) -> bool:
+        return self._simulating
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    def get_telemetry(self) -> TelemetrySnapshot:
+        with self._lock:
+            snap = TelemetrySnapshot(
+                az       = self._tel.az,
+                alt      = self._tel.alt,
+                az_rate  = self._tel.az_rate,
+                alt_rate = self._tel.alt_rate,
+                status   = self._tel.status,
+                epoch    = self._tel.epoch,
+                fresh    = self._tel.fresh,
+            )
+            self._tel.fresh = False
+            return snap
+
+    # ── connection ────────────────────────────────────────────────────────────
+
+    def connect(self) -> tuple[bool, str]:
+        if self._running:
+            return True, "Already running"
+
+        if not _PAHO_OK or self.config.force_sim:
+            reason = "paho-mqtt not installed" if not _PAHO_OK else "forced simulation"
+            return self._start_sim(reason)
+
+        try:
+            if _PAHO_V2:
+                client = _mqtt_mod.Client(_mqtt_mod.CallbackAPIVersion.VERSION2)
+            else:
+                client = _mqtt_mod.Client()
+
+            client.on_connect    = self._cb_connect
+            client.on_disconnect = self._cb_disconnect
+            client.on_message    = self._cb_message
+
+            client.connect_async(
+                self.config.broker_host,
+                self.config.broker_port,
+                self.config.keepalive,
+            )
+            client.loop_start()
+            self._client  = client
+            self._running = True
+
+            deadline = time.time() + 3.0
+            while time.time() < deadline and not self._connected:
+                time.sleep(0.05)
+
+            if not self._connected:
+                client.loop_stop()
+                client.disconnect()
+                self._client  = None
+                self._running = False
+                return self._start_sim(
+                    f"broker {self.config.broker_host}:{self.config.broker_port} unreachable"
+                )
+
+            return True, (
+                f"MQTT connected  ·  "
+                f"{self.config.broker_host}:{self.config.broker_port}  ·  "
+                f"cmd={self.config.cmd_topic}  tel={self.config.tel_topic}"
+            )
+
+        except Exception as exc:
+            self._running = False
+            return self._start_sim(f"MQTT error: {exc}")
+
+    def disconnect(self) -> None:
+        self._running    = False
+        self._connected  = False
+        self._simulating = False
+        if self._client:
+            try:
+                self._client.loop_stop()
+                self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
+
+    # ── command senders ───────────────────────────────────────────────────────
+
+    def _publish(self, payload: dict) -> None:
+        payload["t"] = time.time()
+        msg = json.dumps(payload)
+        if self._client and self._connected:
+            try:
+                self._client.publish(self.config.cmd_topic, msg, qos=0)
+            except Exception as exc:
+                print(f"[antenna_cmd] publish error: {exc}")
+        elif self._simulating:
+            self._cmd_q.put(payload)
+
+    def send_slew(self, axis: str, rate: float) -> None:
+        """axis='az'|'alt', rate deg/s — positive=right/up, negative=left/down."""
+        self._publish({"cmd": "slew", "axis": axis, "rate": float(rate)})
+
+    def send_stop(self) -> None:
+        self._publish({"cmd": "stop"})
+
+    def send_set_rate(self, axis: str, rate: float) -> None:
+        self._publish({"cmd": "set_rate", "axis": axis, "rate": float(rate)})
+
+    def send_goto_altaz(self, az: float, alt: float) -> None:
+        self._publish({"cmd": "goto_altaz", "az": float(az), "alt": float(alt)})
+
+    def send_goto_radec(
+        self,
+        ra_h: int, ra_m: int, ra_s: float,
+        dec_deg: float,
+    ) -> None:
+        self._publish({
+            "cmd":     "goto_radec",
+            "ra_h":    int(ra_h),
+            "ra_m":    int(ra_m),
+            "ra_s":    float(ra_s),
+            "dec_deg": float(dec_deg),
+        })
+
+    # ── MQTT callbacks ────────────────────────────────────────────────────────
+
+    def _cb_connect(self, client, userdata, *args) -> None:
+        rc = args[1] if _PAHO_V2 else args[1]
+        ok = (not rc.is_failure) if _PAHO_V2 else (rc == 0)
+        if ok:
+            self._connected = True
+            client.subscribe(self.config.tel_topic)
+
+    def _cb_disconnect(self, client, userdata, *args) -> None:
+        self._connected = False
+
+    def _cb_message(self, client, userdata, msg) -> None:
+        try:
+            self._ingest_telemetry(json.loads(msg.payload.decode()))
+        except Exception as exc:
+            print(f"[antenna_tel] parse error: {exc}")
+
+    def _ingest_telemetry(self, data: dict) -> None:
+        az       = float(data.get("az",       data.get("azimuth",   180.0)))
+        alt      = float(data.get("alt",      data.get("altitude",   45.0)))
+        az_rate  = float(data.get("az_rate",  data.get("az_vel",      0.0)))
+        alt_rate = float(data.get("alt_rate", data.get("alt_vel",     0.0)))
+        status   = str(  data.get("status",  "unknown"))
+
+        self.history.record(az, alt, az_rate, alt_rate)
+
+        with self._lock:
+            self._tel = TelemetrySnapshot(
+                az=az, alt=alt, az_rate=az_rate, alt_rate=alt_rate,
+                status=status, epoch=float(data.get("t", time.time())),
+                fresh=True,
+            )
+
+        if self._on_telemetry:
+            try:
+                self._on_telemetry(az, alt, az_rate, alt_rate)
+            except Exception as exc:
+                print(f"[antenna] on_telemetry error: {exc}")
+
+    # ── simulation ────────────────────────────────────────────────────────────
+
+    def _start_sim(self, reason: str) -> tuple[bool, str]:
+        self._simulating = True
+        self._running    = True
+        self._sim_thread = threading.Thread(
+            target=self._sim_loop, daemon=True, name="astra-antenna-sim"
+        )
+        self._sim_thread.start()
+        msg = f"Simulation mode  ({reason})"
+        print(f"[antenna_cmd] {msg}")
+        return True, msg
+
+    def _sim_loop(self) -> None:
+        last_t = time.time()
+        while self._running:
+            now = time.time()
+            dt  = now - last_t
+            last_t = now
+
+            # drain command queue
+            while True:
+                try:
+                    self._sim_apply(self._cmd_q.get_nowait())
+                except queue.Empty:
+                    break
+
+            self._sim_step(dt)
+            self._sim_tick_n += 1
+
+            # record at lower rate to avoid flooding history
+            if self._sim_tick_n % self._SIM_RECORD == 0:
+                self.history.record(
+                    self._sim_az, self._sim_alt,
+                    self._sim_az_rate, self._sim_alt_rate,
+                )
+
+            with self._lock:
+                self._tel = TelemetrySnapshot(
+                    az       = self._sim_az,
+                    alt      = self._sim_alt,
+                    az_rate  = self._sim_az_rate,
+                    alt_rate = self._sim_alt_rate,
+                    status   = self._sim_mode,
+                    epoch    = now,
+                    fresh    = True,
+                )
+
+            if self._on_telemetry:
+                try:
+                    self._on_telemetry(
+                        self._sim_az, self._sim_alt,
+                        self._sim_az_rate, self._sim_alt_rate,
+                    )
+                except Exception:
+                    pass
+
+            elapsed = time.time() - now
+            time.sleep(max(0.0, self._SIM_DT - elapsed))
+
+    def _sim_apply(self, cmd: dict) -> None:
+        c = cmd.get("cmd", "")
+
+        if c == "slew":
+            axis = cmd.get("axis", "az")
+            rate = float(cmd.get("rate", 0.0))
+            if axis == "az":
+                self._sim_az_rate = float(
+                    np.clip(rate, -self._sim_max_az_rate, self._sim_max_az_rate)
+                )
+            else:
+                self._sim_alt_rate = float(
+                    np.clip(rate, -self._sim_max_alt_rate, self._sim_max_alt_rate)
+                )
+            self._sim_mode = "slewing"
+
+        elif c == "stop":
+            self._sim_az_rate  = 0.0
+            self._sim_alt_rate = 0.0
+            self._sim_mode     = "idle"
+
+        elif c == "set_rate":
+            axis = cmd.get("axis", "az")
+            rate = abs(float(cmd.get("rate", 1.0)))
+            if axis == "az":
+                self._sim_max_az_rate  = rate
+            else:
+                self._sim_max_alt_rate = rate
+
+        elif c == "goto_altaz":
+            self._sim_tgt_az  = float(cmd.get("az",  180.0))
+            self._sim_tgt_alt = float(cmd.get("alt",  45.0))
+            self._sim_mode    = "goto"
+
+        elif c == "goto_radec":
+            # Approximate sim mapping  (not astronomically accurate)
+            ra_dec = (float(cmd.get("ra_h",  0)) +
+                      float(cmd.get("ra_m",  0)) / 60 +
+                      float(cmd.get("ra_s",  0)) / 3600)
+            dec    = float(cmd.get("dec_deg", 45.0))
+            self._sim_tgt_az  = (ra_dec * 15.0) % 360.0
+            self._sim_tgt_alt = float(np.clip(90.0 - abs(dec - 42.6), 5.0, 85.0))
+            self._sim_mode    = "goto"
+
+    def _sim_step(self, dt: float) -> None:
+        if self._sim_mode == "goto":
+            az_err  = (self._sim_tgt_az  - self._sim_az + 180) % 360 - 180
+            alt_err =  self._sim_tgt_alt - self._sim_alt
+
+            az_r  = float(np.clip(az_err  * 0.6, -self._sim_max_az_rate,  self._sim_max_az_rate))
+            alt_r = float(np.clip(alt_err * 0.6, -self._sim_max_alt_rate, self._sim_max_alt_rate))
+
+            if abs(az_err)  < 0.05: az_r  = 0.0
+            if abs(alt_err) < 0.05: alt_r = 0.0
+
+            self._sim_az_rate  = az_r
+            self._sim_alt_rate = alt_r
+
+            if az_r == 0.0 and alt_r == 0.0:
+                self._sim_mode = "idle"
+
+        elif self._sim_mode == "idle":
+            self._sim_az_rate  = 0.0
+            self._sim_alt_rate = 0.0
+        # "slewing" — rates already set by _sim_apply
+
+        self._sim_az  = (self._sim_az  + self._sim_az_rate  * dt) % 360.0
+        self._sim_alt = float(np.clip(
+            self._sim_alt + self._sim_alt_rate * dt, 1.0, 89.0
+        ))
+```
+
+---
+
+**`astra/pages/antenna.py`**
+```python
+"""
+Antenna Control page for ASTRA.
+
+Layout
+──────
+ ┌─ MQTT Connection ───────────────────────────────────────────────────────────┐
+ │  broker · port · cmd topic · tel topic  |  [Connect]  [Disconnect]          │
+ └─────────────────────────────────────────────────────────────────────────────┘
+ ┌─ Status badges ──────────────────────────────────────────────────────────────┐
+ └─────────────────────────────────────────────────────────────────────────────┘
+ ┌─ Position  (left) ─────────────────┐  ┌─ Motion Control  (right) ───────────┐
+ │  ╔══Az══╗  ╔══Alt══╗               │  │  Az Rate  [══●══] 1.00 °/s          │
+ │  ╚══════╝  ╚═══════╝               │  │  Alt Rate [══●══] 1.00 °/s          │
+ │  ╔Az Rate╗ ╔Alt Rate╗              │  │        [  ▲ Alt Up  ]               │
+ │  ╚═══════╝ ╚════════╝              │  │  [◄ Az L]  [■ STOP]  [Az R ►]      │
+ │  Status · last update              │  │        [  ▼ Alt Dn  ]               │
+ └────────────────────────────────────┘  └─────────────────────────────────────┘
+ ┌─ Goto Commands ─────────────────────────────────────────────────────────────┐
+ │  AltAz :  Az [____°]  Alt [____°]                      [► Goto AltAz]       │
+ │  RaDec :  RA [__h] [__m] [____s]  Dec [_____°]         [► Goto RaDec]       │
+ └─────────────────────────────────────────────────────────────────────────────┘
+ ┌─ Motion History ─────────────────────────────────────────────────────────────┐
+ │  [Minutes ▼]  Duration [══●══] 15  min   [↺ Refresh]  DB: Memory            │
+ │  ╔═ Azimuth ══╗  ╔═ Altitude ══╗                                            │
+ │  ╔═ Az Rate ══╗  ╔═ Alt Rate ══╗                                            │
+ └─────────────────────────────────────────────────────────────────────────────┘
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Optional
+
+import plotly.graph_objects as go
+from nicegui import ui
+
+from astra.theme import frame
+from astra.antenna.commander import AntennaConfig, AntennaCommander
+
+# ── module-level singleton ────────────────────────────────────────────────────
+_commander = AntennaCommander()
+
+# Flag set by telemetry callback to trigger a plot refresh
+_tel_flag: dict = {"new": False}
+
+
+def _on_tel(az, alt, az_rate, alt_rate) -> None:
+    _tel_flag["new"] = True
+
+
+_commander.set_on_telemetry(_on_tel)
+
+
+# ── Plotly helpers ────────────────────────────────────────────────────────────
+
+def _base_layout(title: str, y_label: str, height: int = 240) -> dict:
+    return dict(
+        template      = "plotly_dark",
+        paper_bgcolor = "#1e293b",
+        plot_bgcolor  = "#0f172a",
+        font          = dict(color="#94a3b8", size=10),
+        height        = height,
+        margin        = dict(l=54, r=14, t=36, b=42),
+        title         = dict(text=title,
+                             font=dict(size=11, color="#e2e8f0"),
+                             x=0.02, pad=dict(t=6)),
+        xaxis         = dict(title="Time (UTC)", gridcolor="#334155",
+                             type="date", tickformat="%H:%M:%S"),
+        yaxis         = dict(title=y_label, gridcolor="#334155"),
+        showlegend    = False,
+    )
+
+
+def _make_history_fig(title: str, y_label: str, color: str) -> go.Figure:
+    fig = go.Figure(go.Scatter(
+        x=[], y=[],
+        mode="lines",
+        line=dict(color=color, width=1.5),
+        fill="tozeroy",
+        fillcolor=color[:-2] + "18" if color.endswith(")") else color + "18",
+    ))
+    fig.update_layout(**_base_layout(title, y_label))
+    return fig
+
+
+def _update_chart(chart: ui.plotly, t_list: list, val_list: list) -> None:
+    chart.figure["data"][0]["x"] = t_list
+    chart.figure["data"][0]["y"] = val_list
+    chart.update()
+
+
+# ── page ──────────────────────────────────────────────────────────────────────
+
+def create() -> None:
+
+    @ui.page("/antenna")
+    def antenna_page() -> None:
+
+        # per-session state
+        _state = {
+            "last_plot_t":   0.0,
+            "plot_due":      True,
+        }
+        _PLOT_INTERVAL = 5.0   # seconds between automatic plot refreshes
+
+        # slew state — tracks which direction button is held
+        _slew: dict = {"axis": None, "sign": 0.0, "active": False}
+
+        with frame("Antenna Control"):
+
+            # ══════════════════════════════════════════════════════════════════
+            # MQTT CONNECTION CARD
+            # ══════════════════════════════════════════════════════════════════
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            ):
+                with ui.column().classes("p-5 gap-4 w-full"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("settings_ethernet").classes("text-sky-400 text-xl")
+                        ui.label("MQTT Connection") \
+                            .classes("font-semibold text-white text-base")
+
+                    with ui.row().classes("flex-wrap gap-4 items-end w-full"):
+                        broker_in = (
+                            ui.input("Broker Host",
+                                     value=_commander.config.broker_host)
+                            .props("dark dense").classes("min-w-44")
+                        )
+                        port_in = (
+                            ui.number("Port", value=_commander.config.broker_port,
+                                      min=1, max=65535, format="%d")
+                            .props("dark dense").classes("min-w-28")
+                        )
+                        cmd_topic_in = (
+                            ui.input("Command Topic",
+                                     value=_commander.config.cmd_topic)
+                            .props("dark dense").classes("min-w-56")
+                        )
+                        tel_topic_in = (
+                            ui.input("Telemetry Topic",
+                                     value=_commander.config.tel_topic)
+                            .props("dark dense").classes("min-w-56")
+                        )
+
+                    with ui.row().classes("gap-3 items-center flex-wrap"):
+                        async def _do_connect() -> None:
+                            _commander.config.broker_host = broker_in.value or "localhost"
+                            _commander.config.broker_port = int(port_in.value or 1883)
+                            _commander.config.cmd_topic   = cmd_topic_in.value or "astra/motion/command"
+                            _commander.config.tel_topic   = tel_topic_in.value or "astra/motion/telemetry"
+                            conn_btn.set_enabled(False)
+                            ok, msg = await asyncio.get_event_loop().run_in_executor(
+                                None, _commander.connect
+                            )
+                            conn_btn.set_enabled(True)
+                            ui.notify(msg,
+                                      type="positive" if ok else "negative",
+                                      position="top-right")
+
+                        async def _do_disconnect() -> None:
+                            await asyncio.get_event_loop().run_in_executor(
+                                None, _commander.disconnect
+                            )
+                            ui.notify("Disconnected", type="info",
+                                      position="top-right")
+
+                        conn_btn = (
+                            ui.button("Connect", icon="power")
+                            .classes("bg-sky-700 hover:bg-sky-600 text-white")
+                            .on_click(_do_connect)
+                        )
+                        (
+                            ui.button("Disconnect", icon="power_off")
+                            .props("outline")
+                            .classes("text-slate-400")
+                            .on_click(_do_disconnect)
+                        )
+
+            # ══════════════════════════════════════════════════════════════════
+            # STATUS BADGES
+            # ══════════════════════════════════════════════════════════════════
+            def _badge(icon_name: str, text: str,
+                       icon_cls: str = "text-slate-400") -> ui.label:
+                with ui.row().classes(
+                    "items-center gap-1.5 bg-[#1e293b] border border-[#334155] "
+                    "rounded-lg px-3 py-1.5"
+                ):
+                    ui.icon(icon_name).classes(f"text-sm {icon_cls}")
+                    return ui.label(text).classes(
+                        "text-xs font-mono text-slate-300"
+                    )
+
+            with ui.row().classes("w-full flex-wrap gap-3"):
+                b_mqtt    = _badge("sensors",          "MQTT: —",        "text-slate-500")
+                b_mode    = _badge("info",             "Idle",            "text-slate-400")
+                b_age     = _badge("schedule",         "Never",           "text-slate-400")
+                b_msgs    = _badge("move_up",          "Msgs: 0",         "text-indigo-400")
+                b_db      = _badge("storage",          "DB: —",           "text-amber-400")
+
+            # ══════════════════════════════════════════════════════════════════
+            # POSITION  +  MOTION CONTROL  (side by side)
+            # ══════════════════════════════════════════════════════════════════
+            with ui.row().classes("w-full gap-4 items-start flex-wrap"):
+
+                # ── Position display (left) ───────────────────────────────────
+                with ui.card().classes(
+                    "bg-[#1e293b] border border-[#334155] rounded-xl flex-1 min-w-64"
+                ):
+                    with ui.column().classes("p-5 gap-4"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("explore").classes("text-sky-400 text-lg")
+                            ui.label("Current Position") \
+                                .classes("font-semibold text-white text-sm")
+
+                        # 2×2 metric grid
+                        pos_labels: dict[str, ui.label] = {}
+                        with ui.grid(columns=2).classes("gap-3 w-full"):
+                            for key, label, unit, color in [
+                                ("az",       "Azimuth",   "°",   "sky"),
+                                ("alt",      "Altitude",  "°",   "amber"),
+                                ("az_rate",  "Az Rate",   "°/s", "indigo"),
+                                ("alt_rate", "Alt Rate",  "°/s", "emerald"),
+                            ]:
+                                with ui.card().classes(
+                                    "bg-[#0f172a] border border-[#334155] "
+                                    "rounded-lg w-full"
+                                ):
+                                    with ui.column().classes(
+                                        "p-3 items-center gap-0.5"
+                                    ):
+                                        ui.label(label).classes(
+                                            "text-[10px] text-slate-500 "
+                                            "uppercase tracking-wider"
+                                        )
+                                        lbl = ui.label("—").classes(
+                                            f"text-2xl font-bold font-mono "
+                                            f"text-{color}-300 leading-tight"
+                                        )
+                                        ui.label(unit).classes(
+                                            "text-[10px] text-slate-600"
+                                        )
+                                        pos_labels[key] = lbl
+
+                        ui.separator().classes("bg-slate-700")
+                        status_lbl = ui.label("Status: —").classes(
+                            "text-xs text-slate-400 font-mono"
+                        )
+                        age_lbl = ui.label("Last update: —").classes(
+                            "text-xs text-slate-500"
+                        )
+
+                # ── Motion control (right) ────────────────────────────────────
+                with ui.card().classes(
+                    "bg-[#1e293b] border border-[#334155] rounded-xl flex-1 min-w-72"
+                ):
+                    with ui.column().classes("p-5 gap-5"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("gamepad").classes("text-emerald-400 text-lg")
+                            ui.label("Motion Control") \
+                                .classes("font-semibold text-white text-sm")
+
+                        # ── Rate sliders ──────────────────────────────────────
+                        with ui.column().classes("gap-3 w-full"):
+                            for axis_key, label, color in [
+                                ("az",  "Azimuth Rate  (°/s)",  "sky"),
+                                ("alt", "Altitude Rate (°/s)", "amber"),
+                            ]:
+                                with ui.column().classes("gap-1 w-full"):
+                                    with ui.row().classes(
+                                        "items-center justify-between"
+                                    ):
+                                        ui.label(label).classes(
+                                            "text-xs text-slate-400 font-medium"
+                                        )
+                                        rate_badge = ui.label("1.00 °/s").classes(
+                                            f"text-xs font-mono text-{color}-300"
+                                        )
+                                    sld = (
+                                        ui.slider(
+                                            min=0.01, max=5.0,
+                                            step=0.01, value=1.0,
+                                        )
+                                        .props(f"color={color} dense label")
+                                        .classes("w-full")
+                                    )
+
+                                    # Capture loop variables in closure
+                                    def _make_rate_handler(ax, badge, slider):
+                                        def _handler():
+                                            v = float(slider.value or 1.0)
+                                            badge.set_text(f"{v:.2f} °/s")
+                                            _commander.send_set_rate(ax, v)
+                                        return _handler
+
+                                    sld.on(
+                                        "update:model-value",
+                                        _make_rate_handler(
+                                            axis_key, rate_badge, sld
+                                        ),
+                                    )
+
+                                    # Store slider ref for slew tick
+                                    if axis_key == "az":
+                                        az_rate_sld = sld
+                                    else:
+                                        alt_rate_sld = sld
+
+                        ui.separator().classes("bg-slate-700")
+
+                        # ── D-pad ─────────────────────────────────────────────
+                        _BTN_BASE = (
+                            "w-16 h-16 text-white font-bold text-xl "
+                            "rounded-xl shadow-lg select-none "
+                            "active:scale-95 transition-transform cursor-pointer"
+                        )
+
+                        def _jog_btn(
+                            icon_name: str,
+                            bg: str,
+                            axis: str,
+                            sign: float,
+                        ) -> ui.button:
+                            btn = (
+                                ui.button(icon=icon_name)
+                                .classes(f"{_BTN_BASE} {bg}")
+                            )
+
+                            def _press():
+                                _slew["axis"]   = axis
+                                _slew["sign"]   = sign
+                                _slew["active"] = True
+
+                            def _release():
+                                if _slew["active"]:
+                                    _slew["active"] = False
+                                    _slew["axis"]   = None
+                                    _commander.send_stop()
+
+                            btn.on("mousedown",   lambda: _press())
+                            btn.on("mouseup",     lambda: _release())
+                            btn.on("mouseleave",  lambda: _release())
+                            btn.on("touchstart",  lambda: _press())
+                            btn.on("touchend",    lambda: _release())
+                            btn.on("touchcancel", lambda: _release())
+                            return btn
+
+                        # 3×3 D-pad grid
+                        with ui.grid(columns=3).classes(
+                            "gap-3 place-items-center mx-auto"
+                        ):
+                            ui.element("div")
+                            _jog_btn("keyboard_arrow_up",
+                                     "bg-emerald-700 hover:bg-emerald-600",
+                                     "alt", +1.0).tooltip("Altitude Up")
+                            ui.element("div")
+
+                            _jog_btn("keyboard_arrow_left",
+                                     "bg-sky-700 hover:bg-sky-600",
+                                     "az", -1.0).tooltip("Azimuth Left")
+
+                            # STOP (centre)
+                            (
+                                ui.button(icon="stop_circle")
+                                .classes(
+                                    f"{_BTN_BASE} bg-red-700 hover:bg-red-600"
+                                )
+                                .tooltip("STOP all motion")
+                                .on_click(lambda: _commander.send_stop())
+                            )
+
+                            _jog_btn("keyboard_arrow_right",
+                                     "bg-sky-700 hover:bg-sky-600",
+                                     "az", +1.0).tooltip("Azimuth Right")
+
+                            ui.element("div")
+                            _jog_btn("keyboard_arrow_down",
+                                     "bg-emerald-700 hover:bg-emerald-600",
+                                     "alt", -1.0).tooltip("Altitude Down")
+                            ui.element("div")
+
+                        ui.label(
+                            "Hold a direction button to slew  ·  "
+                            "Release to stop"
+                        ).classes("text-[10px] text-slate-500 italic text-center")
+
+            # ══════════════════════════════════════════════════════════════════
+            # GOTO COMMANDS CARD
+            # ══════════════════════════════════════════════════════════════════
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            ):
+                with ui.column().classes("p-5 gap-5 w-full"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("my_location").classes("text-indigo-400 text-xl")
+                        ui.label("Goto Commands") \
+                            .classes("font-semibold text-white text-base")
+
+                    # ── AltAz goto ────────────────────────────────────────────
+                    with ui.row().classes(
+                        "items-center gap-4 flex-wrap w-full "
+                        "bg-[#0f172a] rounded-lg px-4 py-3"
+                    ):
+                        ui.label("Alt / Az").classes(
+                            "text-xs font-bold text-slate-400 uppercase "
+                            "tracking-wider w-16"
+                        )
+                        goto_az_in = (
+                            ui.number("Azimuth (°)", value=180.0,
+                                      min=0, max=360, step=0.1, format="%.1f")
+                            .props("dark dense").classes("min-w-40")
+                        )
+                        goto_alt_in = (
+                            ui.number("Altitude (°)", value=45.0,
+                                      min=1, max=89, step=0.1, format="%.1f")
+                            .props("dark dense").classes("min-w-40")
+                        )
+                        ui.space()
+
+                        def _goto_altaz():
+                            az  = float(goto_az_in.value  or 180)
+                            alt = float(goto_alt_in.value or  45)
+                            if not (0 <= az <= 360 and 0 <= alt <= 90):
+                                ui.notify("Invalid Az/Alt", type="warning"); return
+                            _commander.send_goto_altaz(az, alt)
+                            ui.notify(
+                                f"Goto  Az {az:.1f}°  Alt {alt:.1f}°",
+                                type="positive", position="top-right",
+                            )
+
+                        ui.button("Goto AltAz", icon="send",
+                                  on_click=_goto_altaz) \
+                            .classes("bg-indigo-700 hover:bg-indigo-600 text-white")
+
+                    # ── RaDec goto ────────────────────────────────────────────
+                    with ui.row().classes(
+                        "items-center gap-4 flex-wrap w-full "
+                        "bg-[#0f172a] rounded-lg px-4 py-3"
+                    ):
+                        ui.label("RA / Dec").classes(
+                            "text-xs font-bold text-slate-400 uppercase "
+                            "tracking-wider w-16"
+                        )
+                        with ui.row().classes("items-end gap-1"):
+                            goto_ra_h = (
+                                ui.number("h", value=12,
+                                          min=0, max=23, step=1, format="%d")
+                                .props("dark dense").classes("w-16")
+                            )
+                            ui.label("ʰ").classes("text-slate-400 pb-1 text-sm")
+                            goto_ra_m = (
+                                ui.number("m", value=0,
+                                          min=0, max=59, step=1, format="%02d")
+                                .props("dark dense").classes("w-16")
+                            )
+                            ui.label("ᵐ").classes("text-slate-400 pb-1 text-sm")
+                            goto_ra_s = (
+                                ui.number("s", value=0.0,
+                                          min=0, max=59.99,
+                                          step=0.1, format="%05.2f")
+                                .props("dark dense").classes("w-20")
+                            )
+                            ui.label("ˢ").classes("text-slate-400 pb-1 text-sm")
+
+                        goto_dec = (
+                            ui.number("Dec (°)", value=45.0,
+                                      min=-90, max=90, step=0.1, format="%+.2f")
+                            .props("dark dense").classes("min-w-36")
+                        )
+                        ui.space()
+
+                        def _goto_radec():
+                            ra_h = int(goto_ra_h.value or 0)
+                            ra_m = int(goto_ra_m.value or 0)
+                            ra_s = float(goto_ra_s.value or 0)
+                            dec  = float(goto_dec.value or 0)
+                            if not (0 <= ra_h <= 23 and
+                                    0 <= ra_m <= 59 and
+                                    0 <= ra_s < 60.0):
+                                ui.notify("Invalid RA", type="warning"); return
+                            if not (-90 <= dec <= 90):
+                                ui.notify("Invalid Dec", type="warning"); return
+                            _commander.send_goto_radec(ra_h, ra_m, ra_s, dec)
+                            ui.notify(
+                                f"Goto  "
+                                f"{ra_h:02d}ʰ{ra_m:02d}ᵐ{ra_s:05.2f}ˢ  "
+                                f"Dec {dec:+.2f}°",
+                                type="positive", position="top-right",
+                            )
+
+                        ui.button("Goto RaDec", icon="send",
+                                  on_click=_goto_radec) \
+                            .classes("bg-violet-700 hover:bg-violet-600 text-white")
+
+            # ══════════════════════════════════════════════════════════════════
+            # MOTION HISTORY CARD
+            # ══════════════════════════════════════════════════════════════════
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            ):
+                with ui.column().classes("p-5 gap-4 w-full"):
+
+                    # ── header + controls ─────────────────────────────────────
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("timeline").classes("text-amber-400 text-xl")
+                        ui.label("Motion History") \
+                            .classes("font-semibold text-white text-base")
+
+                    with ui.row().classes("flex-wrap gap-4 items-end"):
+                        with ui.column().classes("gap-1"):
+                            ui.label("Time Unit").classes(
+                                "text-xs text-slate-400 font-medium"
+                            )
+                            time_unit_sel = ui.select(
+                                {"min": "Minutes", "hr": "Hours", "day": "Days"},
+                                value="min",
+                            ).props("dark dense").classes("w-32")
+
+                        with ui.column().classes("gap-1 min-w-56"):
+                            dur_badge = ui.label("15 min").classes(
+                                "text-xs font-mono text-amber-300"
+                            )
+                            duration_sld = (
+                                ui.slider(min=1, max=120,
+                                          step=1, value=15)
+                                .props("color=amber dense label")
+                                .classes("w-full")
+                            )
+
+                        db_lbl = ui.label(
+                            f"DB: {_commander.history.backend}"
+                        ).classes("text-xs text-slate-500 italic self-end")
+
+                        ui.space()
+
+                        async def _on_refresh():
+                            _state["plot_due"] = True
+
+                        (
+                            ui.button("↺  Refresh", icon="refresh",
+                                      on_click=_on_refresh)
+                            .props("outline")
+                            .classes("text-slate-300 self-end")
+                        )
+
+                    # ── time unit / slider coordination ───────────────────────
+                    def _on_unit_change() -> None:
+                        unit = time_unit_sel.value
+                        if unit == "min":
+                            duration_sld.min = 1
+                            duration_sld.max = 120
+                            duration_sld.value = 15
+                        elif unit == "hr":
+                            duration_sld.min = 1
+                            duration_sld.max = 48
+                            duration_sld.value = 2
+                        else:
+                            duration_sld.min = 1
+                            duration_sld.max = 30
+                            duration_sld.value = 1
+                        _update_dur_badge()
+                        _state["plot_due"] = True
+
+                    def _update_dur_badge() -> None:
+                        v    = float(duration_sld.value or 1)
+                        unit = time_unit_sel.value
+                        suffix = {"min": "min", "hr": "hr", "day": "day"}
+                        dur_badge.set_text(f"{v:.0f} {suffix.get(unit, 'min')}")
+
+                    time_unit_sel.on_value_change(lambda _: _on_unit_change())
+                    duration_sld.on("update:model-value",
+                                    lambda _: _update_dur_badge())
+
+                    # ── 2×2 plot grid ─────────────────────────────────────────
+                    with ui.row().classes("w-full gap-4 flex-wrap"):
+                        with ui.card().classes(
+                            "bg-[#1e293b] border border-[#334155] "
+                            "rounded-xl flex-1 min-w-0"
+                        ):
+                            az_chart = ui.plotly(
+                                _make_history_fig("Azimuth",  "Az (°)",   "#0ea5e9")
+                            ).classes("w-full")
+
+                        with ui.card().classes(
+                            "bg-[#1e293b] border border-[#334155] "
+                            "rounded-xl flex-1 min-w-0"
+                        ):
+                            alt_chart = ui.plotly(
+                                _make_history_fig("Altitude", "Alt (°)",  "#f59e0b")
+                            ).classes("w-full")
+
+                    with ui.row().classes("w-full gap-4 flex-wrap"):
+                        with ui.card().classes(
+                            "bg-[#1e293b] border border-[#334155] "
+                            "rounded-xl flex-1 min-w-0"
+                        ):
+                            az_rate_chart = ui.plotly(
+                                _make_history_fig("Az Rate",  "°/s",  "#8b5cf6")
+                            ).classes("w-full")
+
+                        with ui.card().classes(
+                            "bg-[#1e293b] border border-[#334155] "
+                            "rounded-xl flex-1 min-w-0"
+                        ):
+                            alt_rate_chart = ui.plotly(
+                                _make_history_fig("Alt Rate", "°/s",  "#10b981")
+                            ).classes("w-full")
+
+            # ══════════════════════════════════════════════════════════════════
+            # HELPERS used by timers
+            # ══════════════════════════════════════════════════════════════════
+
+            def _duration_s() -> float:
+                v    = float(duration_sld.value or 15)
+                unit = time_unit_sel.value
+                mult = {"min": 60, "hr": 3600, "day": 86400}
+                return v * mult.get(unit, 60)
+
+            def _do_update_plots(data: dict) -> None:
+                _update_chart(az_chart,       data["t"], data["az"])
+                _update_chart(alt_chart,      data["t"], data["alt"])
+                _update_chart(az_rate_chart,  data["t"], data["az_rate"])
+                _update_chart(alt_rate_chart, data["t"], data["alt_rate"])
+
+            # ══════════════════════════════════════════════════════════════════
+            # SLEW TICK  (200 ms)
+            # Periodically re-emits the slew command while a D-pad button is held
+            # ══════════════════════════════════════════════════════════════════
+            def _slew_tick() -> None:
+                if not _slew["active"] or _slew["axis"] is None:
+                    return
+                rate = (
+                    float(az_rate_sld.value)
+                    if _slew["axis"] == "az"
+                    else float(alt_rate_sld.value)
+                )
+                _commander.send_slew(_slew["axis"], _slew["sign"] * rate)
+
+            ui.timer(0.20, _slew_tick)
+
+            # ══════════════════════════════════════════════════════════════════
+            # DISPLAY REFRESH  (500 ms)  — async so MongoDB query runs off-loop
+            # ══════════════════════════════════════════════════════════════════
+            async def _refresh() -> None:
+                now = time.time()
+
+                # ── connection badges ─────────────────────────────────────────
+                if _commander.is_simulating:
+                    b_mqtt.set_text("MQTT: ⟳ Simulation")
+                elif _commander.is_connected:
+                    b_mqtt.set_text("MQTT: ● Live")
+                else:
+                    b_mqtt.set_text("MQTT: ○ Idle")
+                b_db.set_text(f"DB: {_commander.history.backend}")
+
+                # ── telemetry snapshot ────────────────────────────────────────
+                tel = _commander.get_telemetry()
+
+                pos_labels["az"].set_text(f"{tel.az:.2f}")
+                pos_labels["alt"].set_text(f"{tel.alt:.2f}")
+                pos_labels["az_rate"].set_text(f"{tel.az_rate:+.3f}")
+                pos_labels["alt_rate"].set_text(f"{tel.alt_rate:+.3f}")
+                status_lbl.set_text(f"Status: {tel.status}")
+
+                if tel.epoch > 0:
+                    age = now - tel.epoch
+                    age_lbl.set_text(
+                        f"Last update: {age:.1f}s ago"
+                        if age < 60
+                        else f"Last update: {age/60:.1f}m ago"
+                    )
+                    b_age.set_text(
+                        f"Age: {age:.1f}s"
+                        if age < 60
+                        else f"Age: {age/60:.1f}m"
+                    )
+
+                b_mode.set_text(tel.status.capitalize())
+                b_msgs.set_text(f"Msgs: {_commander.history._memory.__len__()}")
+
+                # ── decide whether to refresh plots ───────────────────────────
+                new_tel   = _tel_flag.get("new", False)
+                time_due  = (now - _state["last_plot_t"]) >= _PLOT_INTERVAL
+                force_due = _state["plot_due"]
+
+                if new_tel or time_due or force_due:
+                    _tel_flag["new"]       = False
+                    _state["plot_due"]     = False
+                    _state["last_plot_t"]  = now
+
+                    loop = asyncio.get_event_loop()
+                    data = await loop.run_in_executor(
+                        None, _commander.history.query, _duration_s()
+                    )
+                    _do_update_plots(data)
+
+            ui.timer(0.5, _refresh)
+```
+
+---
+
+**`astra/theme.py`** — add Antenna Control nav entry
+```python
+from contextlib import contextmanager
+from pathlib import Path
+
+from nicegui import ui
+from astra.links import MARIMO_URL, DOCS_URL, LESSONS_URL, HELP_URL
+
+COLORS = {
+    "primary":   "#0ea5e9",
+    "secondary": "#6366f1",
+    "accent":    "#f59e0b",
+    "dark":      "#0f172a",
+    "surface":   "#1e293b",
+    "muted":     "#334155",
+}
+
+_STATIC      = Path(__file__).parent / "static"
+_LOGO_WHITE  = "/static/haystack_logo_white.png"
+_header_logo = _LOGO_WHITE if (_STATIC / "haystack_logo_white.png").exists() else ""
+_drawer_logo = _LOGO_WHITE if (_STATIC / "haystack_logo_white.png").exists() else ""
+
+
+@contextmanager
+def frame(title: str):
+    ui.colors(
+        primary   = COLORS["primary"],
+        secondary = COLORS["secondary"],
+        accent    = COLORS["accent"],
+        dark      = COLORS["dark"],
+    )
+
+    with ui.header(elevated=True).classes(
+        "bg-[#0f172a] text-white items-center justify-between px-4 py-2"
+    ):
+        with ui.row().classes("items-center gap-3"):
+            ui.icon("radio").classes("text-sky-400 text-3xl")
+            with ui.column().classes("gap-0 leading-tight"):
+                ui.label("ASTRA").classes(
+                    "text-xl font-bold tracking-widest text-sky-300"
+                )
+                ui.label("Automated Small Telescope for Radio Astronomy").classes(
+                    "text-xs text-slate-400 tracking-wide"
+                )
+        with ui.row().classes("items-center gap-4"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("circle").classes("text-emerald-400 text-sm")
+                ui.label("System Online").classes("text-sm text-slate-300")
+            ui.element("div").classes("w-px h-6 bg-slate-700")
+            if _header_logo:
+                ui.image(_header_logo).classes(
+                    "h-7 w-auto object-contain opacity-90 "
+                    "hover:opacity-100 transition-opacity"
+                ).tooltip("MIT Haystack Observatory")
+            else:
+                with ui.column().classes("gap-0 leading-none items-end"):
+                    ui.label("MIT").classes(
+                        "text-[10px] font-bold tracking-widest "
+                        "text-slate-300 leading-tight"
+                    )
+                    ui.label("Haystack Observatory").classes(
+                        "text-[9px] text-slate-500 leading-tight"
+                    )
+
+    with ui.left_drawer(fixed=True).classes(
+        "bg-[#1e293b] pt-4 flex flex-col justify-between"
+    ):
+        with ui.column().classes("w-full"):
+            _nav_links()
+        with ui.column().classes(
+            "w-full border-t border-slate-700/60 mt-4 pt-4 pb-4 px-4 gap-1"
+        ):
+            if _drawer_logo:
+                ui.image(_drawer_logo).classes(
+                    "w-full max-w-[160px] h-auto object-contain "
+                    "opacity-70 hover:opacity-95 transition-opacity mx-auto"
+                ).tooltip("MIT Haystack Observatory")
+            else:
+                ui.label("MIT Haystack Observatory").classes(
+                    "text-[10px] text-slate-500 tracking-wide text-center"
+                )
+            ui.label("MIT Haystack Observatory").classes(
+                "text-[9px] text-slate-600 text-center tracking-wide leading-tight"
+            )
+
+    with ui.column().classes("w-full p-6 gap-6 bg-[#0f172a] min-h-screen"):
+        ui.label(title).classes("text-2xl font-semibold text-white")
+        yield
+
+
+def _section_label(text: str) -> None:
+    ui.label(text).classes(
+        "text-xs font-bold text-slate-500 tracking-widest px-4 mt-3 mb-1"
+    )
+
+
+def _separator() -> None:
+    ui.separator().classes("bg-slate-700/60 mx-4 my-2")
+
+
+def _internal_link(icon_name: str, label: str, path: str) -> None:
+    with ui.link(target=path).classes("no-underline w-full"):
+        with ui.row().classes(
+            "items-center gap-3 px-4 py-3 rounded-lg cursor-pointer "
+            "hover:bg-sky-900/40 text-slate-300 hover:text-sky-300 transition-colors"
+        ):
+            ui.icon(icon_name).classes("text-lg")
+            ui.label(label).classes("text-sm font-medium")
+
+
+def _external_link(
+    icon_name:  str,
+    label:      str,
+    url:        str,
+    sublabel:   str = "",
+    icon_color: str = "text-slate-400",
+) -> None:
+    with ui.link(target=url, new_tab=True).classes("no-underline w-full"):
+        with ui.row().classes(
+            "items-center gap-3 px-4 py-3 rounded-lg cursor-pointer "
+            "hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 "
+            "transition-colors group"
+        ):
+            ui.icon(icon_name).classes(f"text-lg {icon_color} shrink-0")
+            with ui.column().classes("gap-0 flex-1 min-w-0"):
+                ui.label(label).classes("text-sm font-medium leading-tight")
+                if sublabel:
+                    ui.label(sublabel).classes(
+                        "text-[10px] text-slate-600 group-hover:text-slate-500 "
+                        "leading-tight truncate"
+                    )
+            ui.icon("open_in_new").classes(
+                "text-xs text-slate-600 group-hover:text-slate-400 "
+                "shrink-0 transition-colors"
+            )
+
+
+def _nav_links() -> None:
+    _section_label("NAVIGATION")
+    _internal_link("dashboard",      "Dashboard",        "/")
+    _internal_link("my_location",    "Control",          "/control")
+    _internal_link("schedule",       "Observations",     "/observations")
+    _internal_link("graphic_eq",     "Spectrometer",     "/spectrometer")
+    _internal_link("camera_alt",     "Camera",           "/camera")
+    _internal_link("nights_stay",    "Sky View",         "/sky")
+    _internal_link("settings_input_antenna", "Antenna Control", "/antenna")  # ← new
+    _internal_link("settings",       "Settings",         "/settings")
+
+    _separator()
+
+    _section_label("TOOLS")
+    _external_link(
+        icon_name  = "science",
+        label      = "Marimo Notebook",
+        url        = MARIMO_URL,
+        sublabel   = "localhost:2718  ·  interactive Python",
+        icon_color = "text-violet-400",
+    )
+
+    _separator()
+
+    _section_label("RESOURCES")
+    _external_link(
+        icon_name  = "menu_book",
+        label      = "Documentation",
+        url        = DOCS_URL,
+        sublabel   = "github.io/astra/docs",
+        icon_color = "text-sky-400",
+    )
+    _external_link(
+        icon_name  = "school",
+        label      = "Lessons",
+        url        = LESSONS_URL,
+        sublabel   = "github.io/astra/lessons",
+        icon_color = "text-emerald-400",
+    )
+    _external_link(
+        icon_name  = "help_outline",
+        label      = "UI Help",
+        url        = HELP_URL,
+        sublabel   = "github.io/astra/help",
+        icon_color = "text-amber-400",
+    )
+```
+
+---
+
+**`astra/main.py`**
+```python
+from pathlib import Path
+
+from nicegui import app, ui
+from astra.pages import (
+    dashboard, control, observations,
+    settings, spectrometer, camera, sky, antenna,
+)
+
+
+def main() -> None:
+    app.add_static_files(
+        url_path        = "/static",
+        local_directory = str(Path(__file__).parent / "static"),
+    )
+
+    dashboard.create()
+    control.create()
+    observations.create()
+    settings.create()
+    spectrometer.create()
+    camera.create()
+    sky.create()
+    antenna.create()          # ← new
+
+    ui.run(
+        title  = "ASTRA",
+        port   = 8080,
+        dark   = True,
+        show   = False,
+        reload = True,
+        favicon= "🔭",
+    )
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### Install and run
+
+```bash
+poetry install   # picks up new pymongo dep
+poetry run astra
+```
+
+Navigate to **http://localhost:8080/antenna**
+
+---
+
+### Architecture summary
+
+```
+AntennaCommander  (module singleton)
+  │
+  ├─ MQTT path (paho connected)
+  │    publish → astra/motion/command   (JSON commands)
+  │    subscribe ← astra/motion/telemetry (JSON telemetry)
+  │
+  └─ Simulation path (broker unreachable)
+       ├─ queue.Queue  ← receives commands from UI
+       ├─ physics thread @ 10 Hz  (slew / goto state machine)
+       └─ pre-populated 30 min history at startup
+
+MotionHistoryClient  (owned by commander)
+  ├─ MongoDB  (astra.motion) — primary if reachable
+  └─ deque(50 000)  — always maintained as hot fallback
+
+NiceGUI timers (per browser session)
+  ├─ 200 ms  _slew_tick     → resend slew command while D-pad held
+  └─ 500 ms  _refresh       → update badges + position display
+       └─ run_in_executor   → query history (non-blocking)
+            └─ _do_update_plots  (4 plotly charts)
+```
+
+| Command | JSON sent to `astra/motion/command` |
+|---|---|
+| Hold D-pad Up/Down | `{"cmd":"slew","axis":"alt","rate":±r,"t":…}` every 200 ms |
+| Hold D-pad Left/Right | `{"cmd":"slew","axis":"az","rate":±r,"t":…}` every 200 ms |
+| Release any D-pad | `{"cmd":"stop","t":…}` |
+| Rate slider change | `{"cmd":"set_rate","axis":"az"\|"alt","rate":r,"t":…}` |
+| Goto AltAz | `{"cmd":"goto_altaz","az":d,"alt":d,"t":…}` |
+| Goto RaDec | `{"cmd":"goto_radec","ra_h":h,"ra_m":m,"ra_s":s,"dec_deg":d,"t":…}` |
+| Centre STOP button | `{"cmd":"stop","t":…}` |
+
+Click / Right-click flow
+────────────────────────
+mousedown (any button)
+  → _handle_mouse(e)
+      e.image_x, e.image_y  (natural image pixel coords)
+      ↓
+      VisibleCatalog.find_nearest(px, py, _vis_catalog["objects"])
+      ↓
+      _sel["obj"] = closest SkyObject
+      ↓
+      live_img.content = _selection_svg(obj, resolution)   # SVG crosshair
+      ctx_name / ctx_azel / ctx_radec updated               # context menu labels
+      sel_name_lbl / sel_detail_lbl / quick_btns updated    # bottom panel
+
+Right-click release  →  Quasar QMenu appears (context-menu trigger)
+  showing pre-updated object name, type, Az/Alt, RA/Dec
+
+Menu item click  →  _send_sky_cmd("goto"|"track"|"sync"|"stop")
+  →  AntennaCommander.send_sky_tracking(cmd, obj)
+  →  MQTT publish → astra/motion/command
+
+Catalog rebuild flow
+────────────────────
+render_count increments  (new PNG ready)
+  → _refresh() detects  render_count > vis_catalog["render_count"]
+  → run_in_executor  →  VisibleCatalog.build(sky_cfg)
+       • skyfield DSO altaz for ~100 named objects
+       • Hipparcos vectorised altaz for all stars ≤ limiting_magnitude
+       • orthographic projection → (px, py) for each
+  → _vis_catalog["objects"] = list[SkyObject]
+  → b_cat badge updated: "Catalog: 847 objects"
+
+  MQTT JSON published to astra/motion/command	
+Goto / Track / Sync	{"cmd":"goto","object":{"name":"Cassiopeia A","type":"SupernovaRemnant","az":45.23,"alt":67.89,"ra_deg":350.866,"dec_deg":58.815,"ra_str":"23h 23m 26.40s","dec_str":"+58° 48′ 54.0″","magnitude":null,"catalog_id":"Cassiopeia A"},"t":1721…}
+Stop Motion	{"cmd":"stop","t":1721…}
+
+┌─ Spectrometer Configuration ────────────────────────────────────────────────┐
+ │  [digital_rf dir]  [channel]  [centre freq MHz]  [sample rate MHz]          │
+ │ ─────────────────────────────────────────────────────────────────────────── │
+ │  [Calibrator ▼]   [Remove Background ▼]   [Scale to Calibration ▼]          │
+ │                                                    [🔬 Calibrate]  ●         │
+ │                                              Sent mode=off rm_bg=off …      │
+ │ ─────────────────────────────────────────────────────────────────────────── │
+ │  ▶ Advanced — FFT · integration · waterfall · colour                        │
+ │ ─────────────────────────────────────────────────────────────────────────── │
+ │  ● Stopped  [Apply]  [▶ Start]  [⏹ Stop]                                    │
+ └─────────────────────────────────────────────────────────────────────────────┘
+ {
+  "cmd":                  "calibrate",
+  "mode":                 "pulse",
+  "remove_background":    "on",
+  "scale_to_calibration": "off",
+  "t":                    1721000000.0
+}
+
+[Expire ▼]  [Period ▼]  [Expire… button]
+     ↓
+ui.dialog opens  →  confirmation card
+  "Expire [ RF ] data from [ last day ] in /data/astra"
+  ○ cancel   ○ okay
+  [Cancel]  [Okay — expire now]
+     ↓ okay
+asyncio.create_task(_run_clean(...))   ← non-blocking background task
+     ↓
+Progress bar + status label updated every 0.4 s
+✅ Clean complete
+
+app.on_startup
+  └─ await _pointing_sub.start()
+       └─ asyncio.create_task(_run_loop())
+            │
+            ├─ _try_mqtt()  ─────────────────────────────────────────────────┐
+            │    async with aiomqtt.Client(...) as client:                   │
+            │        await client.subscribe("astra/pointing")                │
+            │        async for message in client.messages:                   │
+            │            _parse(message)  →  updates  astra.state.pointing   │
+            │                                                                 │
+            └─ on failure → _sim_burst()  (30 s)  →  retry _try_mqtt()  ←──┘
+
+NiceGUI 1 Hz timer (_refresh)
+  └─ reads  astra.state.pointing  directly (no lock needed — same event loop)
+  └─ detects msg_count change → maybe kick_render

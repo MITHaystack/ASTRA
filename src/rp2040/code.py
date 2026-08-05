@@ -32,10 +32,11 @@ import digitalio
 
 import adafruit_displayio_sh1107
 
-VERSION = "v1.0.0a-20260530"
+VERSION = "v1.0.0a-20260721"
 
-
-ai_state = {'event':'ai-state',
+# Global state for use in the display routine
+ai_state = {'group':'ai-state',
+            'event':'status',
             'utc':"2000-01-01T00:00:00Z",
             'latitude':0.0,
             'longitude':0.0,
@@ -52,13 +53,34 @@ ai_state = {'event':'ai-state',
     Assumes a sensor orientation with board top upward in case and adafruit logo to back near cover side.
 """
 def quat_to_az_el(q):
-    w,x,y,z = q
-    vx = 1.0 - 2.0 * y**2 - 2.0 * z**2
-    vy = 2.0 * x * y + 2.0 * w * z
-    vz = 2.0 * x * z - 2.0 * w * y
-    azimuth = -math.atan2(vy,vx)
-    elevation = math.asin(vz)
-    return math.degrees(azimuth), math.degrees(elevation)
+    w,x0,y0,z0 = q
+    scale = math.sqrt(w*w+x*x+y*y+z*z)
+    # rotate to IMU coordinates and scale
+    x = x0 / scale
+    y = y0 / scale
+    z = z0 / scale
+    # compute vectors
+    # Assumes a right-handed coordinate system where:
+    #   +x is telescope boresight
+    #   +y is left of antenna
+    #   +z is up from gravity
+    #
+    altitude = math.degrees(math.asin(2*(w*y-x*z)))
+    azimuth = math.degrees(math.atan2(2*(w*z+x*y), 1 - 2 * (y*y+z*z)))
+    #vx = 2 * (x * y + w * z)
+    #vy = w * w + y * y - x * x - z * z
+    #vz = 2 * (y * z - w * x)
+    # compute angles
+    #azimuth = -math.degrees(math.atan2(vx, vy))
+    #altitude = math.degrees(math.asin(vz / math.sqrt(vx*vx + vy*vy + vz*vz)))
+    return (azimuth, altitude)
+    
+    #vx = 1.0 - 2.0 * y**2 - 2.0 * z**2
+    #vy = 2.0 * x * y + 2.0 * w * z
+    #vz = 2.0 * x * z - 2.0 * w * y
+    #azimuth = math.atan2(vy,vx)
+    #elevation = math.asin(vz)
+    #return math.degrees(azimuth), math.degrees(elevation)
 
 
 """
@@ -81,8 +103,10 @@ def connect_gps(logQ):
     try:
         i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
         gps = adafruit_gps.GPS_GtopI2C(i2c, debug=False)  # Use I2C interface
+        gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+        gps.send_command(b"PMTK220,1000")
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_gps','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-gps-state','source':'connect_gps','value':f"{e}"}
         logQ.put(e_event)
         gps = None
         
@@ -106,7 +130,8 @@ def telemetry_gps(gps):
                     gps.timestamp_utc.tm_sec) # no time but UTC in ISO8601
 
     gps_data = {
-        'event' : 'ai-gps-data',
+        'group' : 'astra-gps-data',
+        'event' : 'telemetry',
         'utc'   : gps_utc_time,
         'adata' : gps.isactivedata,
         'fix'   : gps.has_fix,
@@ -140,7 +165,7 @@ def connect_imu(logQ):
         imu.mode = adafruit_bno055.NDOF_MODE
 
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_imu','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-imu-state','source':'connect_imu','value':f"{e}"}
         logQ.put(e_event)
         imu = None
     
@@ -160,10 +185,11 @@ def telemetry_imu(imu):
     # need to figure out if this has declination to remove or not...
 
     imu_data = {
-        'event' : 'ai-imu-data',
+        'group' : 'astra-imu-data',
+        'event' : 'telemetry',
         'temperature' : imu.temperature,
         'calibrated' : imu.calibrated,
-        'cal-status' : imu.calibration_status,
+        'cal_status' : imu.calibration_status,
         'euler'      : euler,
         'pointing'   : pointing,
         'gravity'    : imu.gravity,
@@ -185,7 +211,7 @@ def connect_gpio(logQ):
         i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
         diode_gpio = adafruit_pcf8574.PCF8574(i2c)
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_gpio','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-gpio-state','source':'connect_gpio','value':f"{e}"}
         logQ.put(e_event)
         diode_gpio = None
     
@@ -216,7 +242,7 @@ async def gps_telemetry(telemetryQ,logQ, i2cSBL, stateL, gps,gps_period):
                 ai_state['fix'] = gps_t['fix']
             
         except Exception as e:
-            e_event = {'event':'exception','source':'gps_telemetry','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-gps-state','source':'gps_telemetry','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(gps_period)
@@ -245,7 +271,7 @@ async def imu_telemetry(telemetryQ,logQ,i2cSBL,stateL, imu,imu_period):
 
  
         except Exception as e:
-            e_event = {'event':'exception','source':'imu_telemetry','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-imu-state','source':'imu_telemetry','value':f"{e}"}
             await logQ.put(e_event)
  
         await asyncio.sleep(imu_period)
@@ -268,17 +294,17 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, displayL, diode_gpio, diode_
         try:
             try:
                 ndata = diodeQ.get_nowait()
-                if ndata['value'] == 'ENABLE':
+                if ndata['mode'] == 'ENABLE':
                     diode_state = 'ENABLE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"enable"}
-                elif ndata['value'] == 'DISABLE':
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"enable"}
+                elif ndata['mode'] == 'DISABLE':
                     diode_state = 'DISABLE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"disable"}
-                elif ndata['value'] == 'PULSE':
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"disable"}
+                elif ndata['mode'] == 'PULSE':
                     diode_state = 'PULSE'
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"pulse"}
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"pulse"}
                 else:
-                    status = {'event':'ai-diode-state', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
+                    status = {'event':'status','group':'astra-diode-state', 'source':'noise_diode_handler', 'value':f"unknown command {ndata['value']}"}
 
                 await logQ.put(status)
 
@@ -308,7 +334,7 @@ async def noise_diode_handler(diodeQ, logQ, i2cSBL, displayL, diode_gpio, diode_
                 ai_state['diode-state'] = diode_state
             
         except Exception as e:
-            e_event = {'event':'exception','source':'noise_diode_handler','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-diode-state','source':'noise_diode_handler','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(diode_period)
@@ -334,7 +360,7 @@ def connect_display(logQ):
         display = adafruit_displayio_sh1107.SH1107(display_bus, width=WIDTH, height=HEIGHT) 
        
     except Exception as e:
-        e_event = {'event':'exception','source':'connect_display','value':f"{e}"}
+        e_event = {'event':'exception','group':'astra-display-state','source':'connect_display','value':f"{e}"}
         logQ.put(e_event)
         
     return display
@@ -426,11 +452,11 @@ async def display_handler(logQ, displayL, display, display_period):
             display_counter += 1
 
             # report handler status
-            status = {'event':'display-state', 'source':'display_handler', 'value':f"({display_state},{display_counter})"}
+            status = {'event':'status','group':'astra-display-state','source':'display_handler', 'value':f"({display_state},{display_counter})"}
             await logQ.put(status)
 
         except Exception as e:
-            e_event = {'event':'exception','source':'display_handler','value':f"{e}"}
+            e_event = {'event':'exception','group':'astra-display-state','source':'display_handler','value':f"{e}"}
             await logQ.put(e_event)
 
         await asyncio.sleep(display_period)
@@ -444,12 +470,12 @@ async def command_handler(eventQ, logQ, diodeQ, cmd_period):
         #print("update command handler")
         try:
             cmd = eventQ.get_nowait()
-            if cmd['event'] == 'noise-diode':
+            if cmd['group'] == 'noise-diode-cmd':
                 await diodeQ.put(cmd)
-            elif cmd['event'] == 'print':
+            elif cmd['group'] == 'print-cmd':
                 print(cmd['value'])
             
-            status = {'event':'command-state', 'source':'command_handler', 'value':f"dispatched {cmd}"}
+            status = {'event':'status', 'group':'astra-command-state', 'source':'command_handler', 'value':f"dispatched {cmd}"}
             await logQ.put(status)
 
         except:
@@ -510,7 +536,7 @@ async def usb_communications(telemetryQ, eventQ, logQ, usb_serial, com_period):
         except ValueError as e:
                 print(f"JSON syntax error: {line}")
         except Exception as e:
-                e_event = {'event':'exception','source':'usb_communications','value':f"{e}"}
+                e_event = {'event':'exception','group':'astra-usb-state','source':'usb_communications','value':f"{e}"}
                 await logQ.put(e_event)
 
         await asyncio.sleep(com_period)
