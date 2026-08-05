@@ -33,12 +33,12 @@ enables a direct comparison of radio signatures with wide field of view imaging.
 
 ASTRA can be constructed by a small group using off the shelf components, 3D printed brackets and enclosures, and open source software. 
 
-- [Components](hardware/components-overview.md)
-- [Assembly](hardware/assembly-overview.md)
-- [Software Configuration](software/software-overview.md)
-- [Integration and Testing](testing/testing-overview.md)
-- [Focusing and Calibration](testing/focusing-cal-overview.md)
-- [Environmental](testing/environmental-overview.md)
+- [Components](docs/hardware/components-overview.md)
+- [Assembly](docs/hardware/assembly-overview.md)
+- [Software Configuration](docs/software/software-overview.md)
+- [Integration and Testing](docs/testing/testing-overview.md)
+- [Focusing and Calibration](docs/testing/focusing-cal-overview.md)
+- [Environmental](docs/testing/environmental-overview.md)
 - [Prior Versions](docs/astra-prior-version-archive.md)
 
 Although many alternative components exist, the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
@@ -50,35 +50,35 @@ Although many alternative components exist, the overall selections for ASTRA are
 Our lessons are currently under development and will be released after we complete testing them. 
 
 ### Introduction
-- [What is ASTRA?](lessons/astra-intro-overview)
-- [Observing with ASTRA](lessons/astra-intro-observing)
+- [What is ASTRA?](docs/lessons/astra-intro-overview)
+- [Observing with ASTRA](docs/lessons/astra-intro-observing)
 
 ### Setup and Calibration
-- [How to Align ASTRA](lessons/astra-intro-align)
-- [How to Focus ASTRA](lessons/astra-intro-focus)
-- [Safe Observing with ASTRA](lessons/astra-safety)
+- [How to Align ASTRA](docs/lessons/astra-intro-align)
+- [How to Focus ASTRA](docs/lessons/astra-intro-focus)
+- [Safe Observing with ASTRA](docs/lessons/astra-safety)
 
 ### Basic Data Taking
-- [Pointing and Tracking](lessons/astra-intro-pointing)
-- [Radio Measurement](lessons/astra-radio-measurements)
-- [Optical Measurement](lessons/astra-optical-measurements)
+- [Pointing and Tracking](docs/lessons/astra-intro-pointing)
+- [Radio Measurement](docs/lessons/astra-radio-measurements)
+- [Optical Measurement](docs/lessons/astra-optical-measurements)
 
 ### Lesson Plans
-- [The Electromagnetic Spectrum](lessons/astra-em-spectrum)
-- [The Hydrogen Line at 1420 MHz](lessons/astra-hline-intro)
-- [Radio Waves and Propagation](lessons/astra-radio-propagation)
-- [Astrochemistry](lessons/astra-astro-chemistry)
-- [Outer Space is Not Empty](lessons/astra-space-not-empty)
+- [The Electromagnetic Spectrum](docs/lessons/astra-em-spectrum)
+- [The Hydrogen Line at 1420 MHz](docs/lessons/astra-hline-intro)
+- [Radio Waves and Propagation](docs/lessons/astra-radio-propagation)
+- [Astrochemistry](docs/lessons/astra-astro-chemistry)
+- [Outer Space is Not Empty](docs/lessons/astra-space-not-empty)
 
 ### Mini Projects
-- [Radio and Optical Imaging of the Sun](projects/astra-project-solar)
-- [Radio and Optical Imaging of the Moon](projects/astra-project-lunar)
-- [Galactic Rotation Curve](projects/astra-project-rotation-curve)
-- [Detection of Jupiter](projects/astra-project-jovian)
-- [Imaging Andromeda](projects/astra-project-andromeda)
-- [The Crab Nebula](projects/astra-project-crab-nebula)
-- [Star Cluster Survey](projects/astra-project-star-clusters)
-- [Imaging Sagitarius A*](projects/astra-project-sagitariusA)
+- [Radio and Optical Imaging of the Sun](docs/projects/astra-project-solar)
+- [Radio and Optical Imaging of the Moon](docs/projects/astra-project-lunar)
+- [Galactic Rotation Curve](docs/projects/astra-project-rotation-curve)
+- [Detection of Jupiter](docs/projects/astra-project-jovian)
+- [Imaging Andromeda](docs/projects/astra-project-andromeda)
+- [The Crab Nebula](docs/projects/astra-project-crab-nebula)
+- [Star Cluster Survey](docs/projects/astra-project-star-clusters)
+- [Imaging Sagitarius A*](docs/projects/astra-project-sagitariusA)
 
 ## License
 
