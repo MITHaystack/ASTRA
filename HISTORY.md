@@ -5,12 +5,12 @@ These systems were initially developed by Dr. Alan Rogers of MIT Haystack Observ
 in his memo series. Many staff members of MIT Haystack Observatory have contributed to these systems
 and they have been the subject of many student projects. 
 
-The specific ASTRA design was developed as part of a student project by Joe Lind of Groton Dunstable
+The specific ASTRA design was developed as part of a Haystack student project by Joe Lind of Groton Dunstable
 Region High School and Troop 1 West Groton. This project ultimately became a part of an Eagle Scout
 project by Joe to contribute the second prototype unit to Groton Dunstable Region High School. Early
 testing and construction of this unit involved contributions from members of Scouting America 
-Troop 1 West Groton. Dr. Frank Lind developed the first prototype design in combination with early testing
-by Joe Lind. 
+Troop 1 West Groton. Dr. Frank Lind developed the first prototype design and software in combination 
+with early testing by Joe Lind. 
 
 # ASTRA Open Source Usage and Contributions
 
