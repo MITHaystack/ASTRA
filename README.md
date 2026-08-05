@@ -37,7 +37,6 @@ ASTRA can be constructed by a small group using off the shelf components, 3D pri
 - [Assembly](docs/hardware/)
 - [Software Configuration](docs/system/system.md)
 - [Environmental](docs/system/environmental-overview.md)
-- [Prior Versions](docs/astra-prior-version-archive.md)
 
 Although many alternative components exist, the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
 
