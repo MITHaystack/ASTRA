@@ -238,7 +238,7 @@ class AstraCalibrationData(AstraObject):
 class AstraLocationData(AstraObject):
     timestamp       : str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
     site_name       : str = field(default_factory=lambda:"unknown")
-    gps_location    : bool = False
+    gps_location    : bool = True  # default to auto location on GPS lock
     latitude        : float = 0.0
     longitude       : float = 0.0
     altitude        : float = 0.0
@@ -281,8 +281,9 @@ class AstraPositionData(AstraObject):
 @dataclass
 class AstraRateData(AstraObject):
     timestamp       : str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
-    az_rate         : float = 0.0
-    alt_rate        : float = 0.0
+    # avoids a zero rate divide by zero problem in the motion controller. 
+    az_rate         : float = 1.0 
+    alt_rate        : float = 1.0
 
     def __post_init__(self):
         super().__init__()
@@ -644,7 +645,7 @@ class AstraSetRateCommand(AstraObject):
 
     def __init__(self):
         super().__init__()
-        self.group = 'astra-set-rate-cmd'
+        self.group = 'mount-set-rate-cmd'
         self.event = 'command'
 
 

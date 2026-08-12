@@ -209,6 +209,11 @@ class AstraStateSubscriber:
 
                     #print("_try_mqtt: go to _parse")
                     await self._parse(message)
+                    
+                    await asyncio.sleep(0.01)
+
+
+                await asyncio.sleep(0.1)
 
             # Clean disconnect (broker closed the session)
             self._connected = False

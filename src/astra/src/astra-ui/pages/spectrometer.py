@@ -68,7 +68,7 @@ def _base_layout(**kw) -> dict:
 
 
 def _axis(title: str, **kw) -> dict:
-    return dict(title=title, gridcolor="#334155", zerolinecolor="#475569", **kw)
+    return dict(title=title, gridcolor="#334155", zerolinecolor="#475569", autorange=True, **kw)
 
 
 def _make_psd(freqs: np.ndarray, psd: np.ndarray, psd_peak: np.ndarray, psd_avg: np.ndarray) -> go.Figure:
@@ -151,10 +151,10 @@ def create() -> None:
             "snapshot": True, 
             "clear_plots": True,
             "subintegration_time" : 0.1,
-            "integration_time" : 0.1,
+            "integration_time" : 30.0,
             "psd_peak" : None,
             "psd_avg" : None,
-            "psd_int_cnt" : 0
+            "psd_int_cnt" : 1
 
             }
 
@@ -202,7 +202,7 @@ def create() -> None:
                             ui.label("power  vs  frequency").classes(
                                 "text-xs text-slate-500"
                             )
-                        f0, p0 = _engine.get_psd()
+                        f0, p0, p0l = _engine.get_psd()
                         psd_chart = ui.plotly(_make_psd(f0, p0, p0, p0)).classes("w-full")
 
                 with ui.card().classes(
@@ -275,12 +275,13 @@ def create() -> None:
                     psd_chart.data = []
                     pvt_chart.data = []
                     _cs_state['psd_peak'] = None
+                    _cs_state['psd_lin'] = None
                     _cs_state['psd_avg'] = None
                     _cs_state['psd_int_cnt'] = 1
                     # wf_chart.data = []
                     _cs_state["clear_plots"] = False
 
-                freqs, psd = _engine.get_psd()
+                freqs, psd, psd_l = _engine.get_psd()
 
                 # check psd length, new length is a reset
 
@@ -292,6 +293,7 @@ def create() -> None:
                         psd_chart.data = []
                         pvt_chart.data = []
                         _cs_state['psd_peak'] = None
+                        _cs_state['psd_lin'] = None
                         _cs_state['psd_avg'] = None
                         _cs_state['psd_int_cnt'] = 1
 
@@ -303,14 +305,14 @@ def create() -> None:
 
                 # moving average update, this way the display can update continously
                 if _cs_state['psd_avg'] is None:
-                    _cs_state['psd_avg'] = psd
+                    _cs_state['psd_avg'] = psd_l
                     _cs_state['psd_int_cnt'] = 1
                 else:
                     if _cs_state['psd_int_cnt'] >= _cs_state['integration_time'] / _cs_state['subintegration_time']:
-                        _cs_state['psd_avg'] = psd
+                        _cs_state['psd_avg'] = psd_l
                         _cs_state['psd_int_cnt'] = 1
                     else:
-                        _cs_state['psd_avg'] = _cs_state['psd_avg'] + (psd - _cs_state['psd_avg'])/_cs_state['psd_int_cnt']
+                        _cs_state['psd_avg'] = _cs_state['psd_avg'] + (psd_l - _cs_state['psd_avg'])/_cs_state['psd_int_cnt']
                         _cs_state['psd_int_cnt'] += 1
                 
                 psd_chart.figure["data"][0]["x"] = freqs
@@ -318,7 +320,8 @@ def create() -> None:
                 psd_chart.figure["data"][1]["x"] = freqs
                 psd_chart.figure["data"][1]["y"] = _cs_state['psd_peak']
                 psd_chart.figure["data"][2]["x"] = freqs
-                psd_chart.figure["data"][2]["y"] = _cs_state['psd_avg']
+                psd_avg_log = 10.0 * np.log10(_cs_state['psd_avg'])
+                psd_chart.figure["data"][2]["y"] = psd_avg_log
 
                 psd_chart.update()
 
@@ -355,7 +358,7 @@ def create() -> None:
                 m_noise.set_text(f"Noise: {noise:.1f} dBFS/Hz")
                 m_snr  .set_text(f"SNR:   {snr:.1f} dB")
                 m_df   .set_text(f"Δf:    {df_khz:.2f} kHz/bin")
-                m_tint .set_text(f"Tsint:  {_config.subintegration_time:.3f} s")
+                m_tint .set_text(f"Tsint:  {_cs_state['subintegration_time']:.3f} s")
                 m_tint .set_text(f"Tint:  {_cs_state['integration_time']:.3f} s")
                 m_cal  .set_text(f"Cal:   {cal_sel.value}")
 
@@ -557,7 +560,7 @@ def create() -> None:
                             ui.number(
                                 "Integration Time (s)",
                                 value=_cs_state['integration_time'],
-                                min=0.01, max=60.0,
+                                min=0.01, max=600.0,
                                 step=0.05, format="%.3f",
                                 on_change = _on_set_int,
                             )

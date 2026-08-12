@@ -167,7 +167,7 @@ class FullSkyRenderer:
             extensions.MAP,
         )
 
-        # ── find the STEREOGRAPHIC projection ─────────────────────────────────
+        # ── find the ZENITH projection ─────────────────────────────────
         
         print(f"[sky] rendering  Zenith"
               f"res={cfg.resolution}  mag≤{cfg.limiting_magnitude}")

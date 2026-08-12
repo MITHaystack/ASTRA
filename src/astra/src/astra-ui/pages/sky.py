@@ -31,7 +31,7 @@ from .. state import astra_state, astra_sub, astra_cmd, motion_history
 from astradata.objects import *
 
 from .. sky.renderer import SkyConfig, FullSkyRenderer
-from .. sky.catalog import SkyObject, FullSkyCatalog, cartesian_to_altaz
+from .. sky.catalog import SkyObject, SkyCatalog
 from .. sky.catalog import SkyObject
 from .. sky.projection import format_ra, format_dec
 
@@ -39,7 +39,7 @@ from .. sky.projection import format_ra, format_dec
 _STATIC_DIR  = str(Path(__file__).parent.parent / "static" / "sky")
 _sky_cfg     = SkyConfig()
 _renderer    = FullSkyRenderer(_sky_cfg, _STATIC_DIR)
-_catalog_bld = FullSkyCatalog()
+_catalog_bld = SkyCatalog()
 
 # Shared catalog — rebuilt after each render
 _catalog_state: dict = {
@@ -54,6 +54,20 @@ _CAM_NEAR   = 0.1
 _CAM_FAR    = 1000.0
 
 # ── coordinate helpers ────────────────────────────────────────────────────────
+
+def _deg_to_hms(degrees):
+    """Converts decimal degrees to hours, minutes, and seconds."""
+    # 15 degrees = 1 hour
+    hours_decimal = degrees / 15.0
+    
+    hours = int(hours_decimal)
+    
+    minutes_decimal = (hours_decimal - hours) * 60.0
+    minutes = int(minutes_decimal)
+    
+    seconds = (minutes_decimal - minutes) * 60.0
+    
+    return hours, minutes, seconds
 
 def _altaz_to_vec(az_deg: float, alt_deg: float) -> tuple[float, float, float]:
     """Az/Alt → unit vector (THREE.js: Y=up, N=+Z, E=+X)."""
@@ -193,19 +207,6 @@ async def _send_sync_command(sync_az, sync_alt, sync_values=True, sync_telemetry
     await astra_cmd.send(cmd,AstraSyncCommand)
 
 
-async def _send_track_object(object_name, track=False):
-    cmd = AstraSetTargetCommand()
-    cmd.timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    cmd.target_type = 'object'
-    match object_name.lower():
-        case 'sun' | 'moon': 
-            ot = 'planet'
-        case _:
-            ot = 'catalog'
-    cmd.target_info = {
-        'object_type':'planet', 'object_name':object_name, 'track':track
-    }
-    await astra_cmd.send(cmd,AstraSetTargetCommand)
 
 
 # ── FastAPI endpoint ──────────────────────────────────────────────────────────
@@ -475,8 +476,8 @@ def create() -> None:
                         return
 
                     # Angular tolerance: wider for lower-resolution images
-                    tol = max(8.0, 360.0 / _sky_cfg.resolution * 120)
-                    obj = FullSkyCatalog.find_nearest_altaz(
+                    tol = max(4.0, (360.0 / _sky_cfg.resolution) * 10)
+                    obj = SkyCatalog.find_nearest_altaz(
                         az, alt, objects, max_sep_deg=tol
                     )
 
@@ -507,6 +508,12 @@ def create() -> None:
                     .classes("w-full cursor-crosshair")
                 )
 
+                ## add pointing layer
+                pointing_layer = sky_img.add_layer()
+                px,py = _altaz_to_pixel(0.0,0.0, _sky_cfg.resolution)
+                pointing_layer.content = f'<circle cx="{px}" cy="{py}" r="10" fill="green" opacity="0.5" />'
+
+
                 # ── context menu (right-click, lives inside the image) ─────────
                 with sky_img:
                     with ui.context_menu():
@@ -524,22 +531,55 @@ def create() -> None:
                         )
                         ui.separator()
 
-                        async def _make_ctx_cmd(cmd: str):
-                            async def _h(): await _send_cmd(cmd)
-                            return _h
+                        async def _ctx_stop_cmd():
+
+                            await _stop_cmd()
+                            ui.notify("⏹ Stop Motion sent",
+                                        type="info", position="top-right")
+
+                        async def _ctx_goto_cmd(track=False):
+                            obj = _sel["obj"]
+
+                            print("ctx goto ", obj)
+                            print(obj.name, obj.ra_deg, obj.dec_deg)
+
+                            tgt_ra_h, tgt_ra_m, tgt_ra_s = _deg_to_hms(obj.ra_deg)
+                            tgt_dec = obj.dec_deg
+                            robj = await astra_state.antenna_state.get('mount-rate')
+
+                            if obj is None:
+                                ui.notify("Select an object first",
+                                            type="warning", position="top-right")
+                                return
+                            
+                            await _send_goto_radec(tgt_ra_h, tgt_ra_m, tgt_ra_s, tgt_dec, robj.az_rate, robj.alt_rate, track)
+                        
+                        async def _ctx_track_cmd():
+                            await _ctx_goto_cmd(True)
+
+                        # async def _ctx_sync_cmd():
+                        #     obj = _sel["obj"]
+
+                        #     if obj is None:
+                        #         ui.notify("Select an object first",
+                        #                     type="warning", position="top-right")
+                        #         return
+
+                        #     await _send_sync_object(obj)
+
 
                         with ui.menu_item("🎯  Goto",
-                                          on_click=_make_ctx_cmd("goto")):
+                                          on_click=_ctx_goto_cmd):
                             ui.tooltip("Slew telescope to this object")
                         with ui.menu_item("🔭  Track",
-                                          on_click=_make_ctx_cmd("track")):
+                                          on_click=_ctx_track_cmd):
                             ui.tooltip("Track this object continuously")
-                        with ui.menu_item("⊙  Sync",
-                                          on_click=_make_ctx_cmd("sync")):
-                            ui.tooltip("Sync pointing model to this object")
+                        #with ui.menu_item("⊙  Sync",
+                        #                  on_click=_ctx_sync_cmd):
+                        #    ui.tooltip("Sync pointing model to this object")
                         ui.separator()
                         with ui.menu_item("⏹  Stop Motion",
-                                          on_click=_make_ctx_cmd("stop")):
+                                          on_click=_ctx_stop_cmd):
                             ui.tooltip("Halt all telescope motion")
 
                 # ── selected-object info panel ─────────────────────────────────
@@ -560,25 +600,25 @@ def create() -> None:
                     with ui.row().classes("gap-2") as quick_row:
                         (
                             ui.button("Goto", icon="send",
-                                      on_click=lambda: _send_cmd("goto"))
+                                      on_click=_ctx_goto_cmd)
                             .props("size=sm")
                             .classes("bg-indigo-700 hover:bg-indigo-600 "
                                      "text-white text-xs")
                         )
                         (
                             ui.button("Track", icon="radio_button_checked",
-                                      on_click=lambda: _send_cmd("track"))
+                                      on_click=_ctx_track_cmd)
                             .props("size=sm")
                             .classes("bg-emerald-700 hover:bg-emerald-600 "
                                      "text-white text-xs")
                         )
-                        (
-                            ui.button("Sync", icon="sync",
-                                      on_click=lambda: _send_cmd("sync"))
-                            .props("size=sm")
-                            .classes("bg-amber-700 hover:bg-amber-600 "
-                                     "text-white text-xs")
-                        )
+                        #(
+                        #    ui.button("Sync", icon="sync",
+                        #              on_click=_ctx_sync_cmd)
+                        #    .props("size=sm")
+                        #    .classes("bg-amber-700 hover:bg-amber-600 "
+                        #             "text-white text-xs")
+                        #)
                         (
                             ui.button("✕", on_click=lambda: _deselect())
                             .props("size=sm flat")
@@ -776,25 +816,7 @@ def create() -> None:
                 ctx_azel.set_text("")
                 ctx_radec.set_text("")
 
-            async def _send_cmd(cmd: str) -> None:
-                if cmd == "stop":
-                    await _stop_cmd()
-                    ui.notify("⏹ Stop Motion sent",
-                              type="info", position="top-right")
-                    return
-                obj = _sel["obj"]
-                if obj is None:
-                    ui.notify("Select an object first",
-                              type="warning", position="top-right")
-                    return
-                await _send_track_object(obj)
-                icons = {"goto": "🎯", "track": "🔭", "sync": "⊙"}
-                ui.notify(
-                    f"{icons.get(cmd, '')}  {cmd.upper()}  →  {obj.name}",
-                    type="positive", position="top-right",
-                )
 
-            
 
             # ══════════════════════════════════════════════════════════════════
             # TIMERS
@@ -818,6 +840,21 @@ def create() -> None:
 
                 b_az.set_text(f"Az:  {az:.1f}°")
                 b_alt.set_text(f"Alt: {alt:.1f}°")
+
+                # --- update sky image layer to add highlight
+                px,py = _altaz_to_pixel(az, alt, _sky_cfg.resolution)
+                #pointing_layer.content = f'<circle cx="{px}" cy="{py}" r="25" fill="#ffde34" opacity="0.5" />'
+
+                pointing_layer.content = f'''
+                    <!-- Horizontal Cross Line -->
+                    <line x1="{px - 25}" y1="{py}" x2="{px + 25}" y2="{py}" stroke="green" stroke-width="4" />
+                        
+                    <!-- Vertical Cross Line -->
+                    <line x1="{px}" y1="{py - 25}" x2="{px}" y2="{py + 25}" stroke="green" stroke-width="4" />
+                        
+                    <!-- Center Target Circle -->
+                    <circle cx="{px}" cy="{py}" r="20" fill="#deff34" stroke="green" stroke-width="4" opacity="0.5" />
+                '''
 
                 # ── debounced control-change render ───────────────────────────
                 if (_ui_state["control_due"]

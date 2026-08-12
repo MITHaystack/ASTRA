@@ -335,9 +335,9 @@ class AzGTi_Protocol:
     """ converts motor counts for a given axis into degrees of motion. """
     def _counts2deg(self,counts,axis):
         match axis:
-            case Axis.AZ | Axis.AZ.value:
+            case Axis.AZ | Axis.AZ.value | '1':
                 degval = counts * 360.0 / self.az_counts_per_rev
-            case Axis.ALT | Axis.ALT.value:
+            case Axis.ALT | Axis.ALT.value | '2':
                 degval = counts * 360.0 / self.alt_counts_per_rev
             case _:
                 raise ValueError(f"AzGti_Protocol - unexpected axis {axis} in _counts2deg private method.")
@@ -347,9 +347,9 @@ class AzGTi_Protocol:
     """ converts motor counts for a given axis into degrees of motion. """
     def _deg2counts(self,deg,axis):
         match axis:
-            case Axis.AZ | Axis.AZ.value:
+            case Axis.AZ | Axis.AZ.value | '1':
                 cval = int((deg * self.az_counts_per_rev)/360.0)
-            case Axis.ALT | Axis.ALT.value:
+            case Axis.ALT | Axis.ALT.value | '2':
                 cval = int((deg * self.alt_counts_per_rev)/360.0)
             case _:
                 raise ValueError(f"AzGti_Protocol - unexpected axis {axis} in _deg2counts private method.")
@@ -440,7 +440,8 @@ class AzGTi_Protocol:
             raise ValueError(f"AzGti_Protocol - unexpected set_step_period return {val}")
         
     def set_speed(self, axis, deg_per_sec):
-        cval = self._deg2counts(abs(deg_per_sec),axis)
+        ax = self._match_axis(axis)
+        cval = self._deg2counts(abs(deg_per_sec),ax)
         print(f"cval:{cval}")
         if abs(cval) < 0:
             crate = int(self.timer_interrupt_freq)
@@ -588,18 +589,15 @@ class AzGTi_Protocol:
     def track_rate(self, axis, rate):
         state = self.get_motion_mode(axis)
 
-        CW = not state['CCW']
+        CW = not state['ccw']
 
-        if state['running']:
-            if not state['tracking'] or (CW and (rate < 0)) or (not CW and (rate > 0)):
+        if state['moving']:
+            # prevent reversals during tracking motion
+            if not state['tracking'] or (CW and (rate < 0)) or ((not CW) and (rate > 0)):
                 self.stop_motion(axis)
-                self.set_motion_mode(axis,True,True,(rate < 0))
-                self.set_speed(axis,rate)
-            else:
-                self.set_speed(axis,rate)
-        else:
-            self.set_motion_mode(axis,True,True,(rate < 0))
-            self.set_speed(axis,rate)
+
+        self.set_motion_mode(axis,True,True,(rate < 0))
+        self.set_speed(axis,abs(rate))
 
         return self.start_motion(axis)
 

@@ -23,12 +23,42 @@ from typing import Optional
 
 import numpy as np
 
-# ── module-level Hipparcos state ──────────────────────────────────────────────
+_SP_OK       = False
+_Star        = None
+_DSO         = None
+_BIG_SKY_MAG9    = None
+_OPEN_NGC        = None
+_SP_VERSION  = "not found"
 
-_hip_load_lock: asyncio.Lock = asyncio.Lock()
-_hip_loaded:    bool         = False
-_hip_df                      = None   # pandas DataFrame once loaded
-_sf_ts                       = None   # shared skyfield Timescale
+try:
+    from starplot.models import Star as _Star, DSO as _DSO   # type: ignore
+    from starplot.data.catalogs import (                      # type: ignore
+        BIG_SKY_MAG9 as _BIG_SKY_MAG9,
+        OPEN_NGC     as _OPEN_NGC,
+    )
+    from starplot import _ 
+    import starplot as _sp
+    _SP_VERSION = getattr(_sp, "__version__", "unknown")
+    _SP_OK = True
+    print(
+        f"[catalog] starplot {_SP_VERSION} — "
+        f"Star + DSO models loaded  "
+        f"(BIG_SKY_MAG9 + OPEN_NGC)"
+    )
+except Exception as _sp_err:
+    print(f"[catalog] starplot models unavailable: {_sp_err} — builtin DSOs only")
+
+# ── optional skyfield timescale (for GAST) ─────────────────────────────────────
+_sf_ts = None
+try:
+    from skyfield.api import Loader as _sf_Loader   # type: ignore
+    import os as _os
+    _cache_dir = _os.path.expanduser("~/.skyfield")
+    _os.makedirs(_cache_dir, exist_ok=True)
+    _sf_ts = _sf_Loader(_cache_dir).timescale()
+    print("[catalog] skyfield timescale loaded")
+except Exception as _ts_err:
+    print(f"[catalog] skyfield unavailable: {_ts_err} — GMST fallback active")
 
 
 # ── sky object ────────────────────────────────────────────────────────────────
@@ -114,6 +144,31 @@ _BUILTIN_DSOS: list[tuple] = [
 
 # ── GAST-based alt/az conversion ──────────────────────────────────────────────
 
+def _gast(dt: datetime) -> float:
+    """
+    Return Greenwich Apparent Sidereal Time in decimal hours.
+    Uses skyfield if available, otherwise falls back to GMST approximation.
+    """
+    try:
+        if _sf_ts is not None:
+            return float(_sf_ts.from_datetime(dt).gast)
+    except Exception:
+        pass
+    # GMST fallback (accurate to ~0.01° for display)
+    jd  = (
+        (dt - datetime(2000, 1, 1, 12, tzinfo=timezone.utc)).total_seconds()
+        / 86400.0 + 2451545.0
+    )
+    t   = (jd - 2451545.0) / 36525.0
+    gmst_deg = (
+        280.46061837
+        + 360.98564736629 * (jd - 2451545.0)
+        + 0.000387933 * t ** 2
+        - t ** 3 / 38710000.0
+    ) % 360.0
+    return gmst_deg / 15.0
+
+
 def _radec_to_altaz(
     ra_deg:  float,
     dec_deg: float,
@@ -195,256 +250,120 @@ def _radec_to_altaz_vec(
 
     return alt_arr, az_arr
 
+# ── RA/Dec formatting helpers (used by sky pages) ─────────────────────────────
+def format_ra(ra_deg: float) -> str:
+    ra = ra_deg / 15.0
+    h  = int(ra)
+    m_ = (ra - h) * 60.0
+    m  = int(m_)
+    s  = (m_ - m) * 60.0
+    return f"{h:02d}h {m:02d}m {s:05.2f}s"
 
-# ── lazy Hipparcos loader ─────────────────────────────────────────────────────
 
-def _load_hipparcos_blocking() -> None:
-    """
-    Load the Hipparcos catalogue — blocking, intended for asyncio.to_thread.
+def format_dec(dec_deg: float) -> str:
+    sign  = "+" if dec_deg >= 0 else "−"
+    d_abs = abs(dec_deg)
+    d     = int(d_abs)
+    m_    = (d_abs - d) * 60.0
+    m     = int(m_)
+    s     = (m_ - m) * 60.0
+    return f"{sign}{d:02d}° {m:02d}′ {s:04.1f}″"
 
-    Uses a Loader rooted at ~/.skyfield so the file is downloaded once and
-    cached there permanently, regardless of the process working directory.
-    """
-    global _hip_df, _sf_ts
+# ── starplot DSO type → readable string ──────────────────────────────────────
+
+def _dso_type_name(dso_type) -> str:
+    """Convert a starplot DsoType enum value to a display string."""
     try:
-        from skyfield.api import Loader
-        from skyfield.data import hipparcos
+        name = str(dso_type.name if hasattr(dso_type, "name") else dso_type)
+        return name.replace("_", " ").title()
+    except Exception:
+        return "DSO"
 
-        # Persistent cache directory — created automatically if absent
-        cache_dir = os.path.expanduser("~/.skyfield")
-        os.makedirs(cache_dir, exist_ok=True)
 
-        loader = Loader(cache_dir)
-        ts     = loader.timescale()
-        _sf_ts = ts
+def _dso_catalog_id(obj) -> str:
+    """Build a human-readable catalog ID for a starplot DSO object."""
+    try:
+        messier = getattr(obj, "messier", None)
+        if messier:
+            return f"M{messier}"
+        ngc = getattr(obj, "ngc", None)
+        if ngc:
+            return f"NGC {ngc}"
+        ic = getattr(obj, "ic", None)
+        if ic:
+            return f"IC {ic}"
+        name = getattr(obj, "name", None)
+        if name:
+            return str(name)
+    except Exception:
+        pass
+    return f"DSO {obj.ra:.2f}"
 
-        with loader.open(hipparcos.URL) as f:
-            df = hipparcos.load_dataframe(f)
 
-        _hip_df = df[df["magnitude"].notna()].copy()
-        print(
-            f"[catalog] Hipparcos: {len(_hip_df):,} stars loaded"
-            f" (cache: {cache_dir})"
+def _dso_display_name(obj) -> str:
+    """Best display name for a starplot DSO."""
+    try:
+        messier = getattr(obj, "messier", None)
+        name    = getattr(obj, "name",    None)
+        if name and messier:
+            return f"M{messier} {name}"
+        if name:
+            return str(name)
+        if messier:
+            return f"M{messier}"
+        ngc = getattr(obj, "ngc", None)
+        if ngc:
+            return f"NGC {ngc}"
+        ic = getattr(obj, "ic", None)
+        if ic:
+            return f"IC {ic}"
+    except Exception:
+        pass
+    return f"DSO RA {obj.ra:.1f}°"
+
+
+def _star_display_name(obj) -> str:
+    """Best display name for a starplot Star."""
+    try:
+        name  = getattr(obj, "name",              None)
+        bayer = getattr(obj, "bayer_designation",  None)
+        flam  = getattr(obj, "flamsteed_designation", None)
+        hip   = getattr(obj, "hip",               None)
+        if name:
+            return str(name)
+        if bayer:
+            return str(bayer)
+        if flam:
+            return str(flam)
+        if hip:
+            return f"HIP {hip}"
+    except Exception:
+        pass
+    return f"Star RA {obj.ra:.1f}°"
+
+# ── catalog class ─────────────────────────────────────────────────────────────
+
+class SkyCatalog:
+    """
+    Unified sky catalog builder + nearest-object finder.
+
+    Usage::
+
+        catalog = SkyCatalog()
+
+        # Build a list of currently visible objects:
+        objects = await catalog.build(
+            lat=42.6, lon=-71.5, elevation_m=131,
+            use_current_time=True,
+            manual_dt=datetime.now(timezone.utc),
+            limiting_magnitude=6.5,
         )
-    except Exception as exc:
-        print(f"[catalog] Hipparcos unavailable ({exc}) — DSOs only")
-        _hip_df = None
 
-
-async def _ensure_hipparcos_loaded() -> None:
-    global _hip_loaded
-    async with _hip_load_lock:
-        if not _hip_loaded:
-            await asyncio.to_thread(_load_hipparcos_blocking)
-            _hip_loaded = True
-
-
-# Visible Catalog
-# ── catalog builder ───────────────────────────────────────────────────────────
-
-class VisibleCatalog:
-    """
-    Builds a list of SkyObjects visible in the current SkyConfig field.
-
-    Coordinate conversion uses t.gast (Greenwich Apparent Sidereal Time)
-    from skyfield's timescale — accurate to ~0.1° for display purposes and
-    requires no planetary ephemeris (.bsp) file.
+        # Find nearest object to a clicked sky position:
+        obj = SkyCatalog.find_nearest_altaz(az, alt, objects, max_sep_deg=10)
     """
 
-    async def build(self, config) -> list[SkyObject]:
-        await _ensure_hipparcos_loaded()
-        return await asyncio.to_thread(self._build_sync, config)
-
-    def _build_sync(self, config) -> list[SkyObject]:
-        from .projection import sky_to_pixel, angular_sep
-
-        dt = (datetime.now(timezone.utc)
-              if config.use_current_time
-              else config.manual_dt)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-
-        # Obtain GAST once — shared by both DSO and star loops
-        gast_h = self._gast(dt)
-
-        objects: list[SkyObject] = []
-        objects += self._dso_list(config, gast_h)
-        if _hip_df is not None:
-            objects += self._star_list(config, gast_h)
-
-        # Project to pixels; keep only objects inside the FOV
-        R     = config.resolution
-        fov   = config.fov
-        az_c  = config.az
-        alt_c = config.alt
-        visible: list[SkyObject] = []
-
-        for obj in objects:
-            sep = angular_sep(obj.az, obj.alt, az_c, alt_c)
-            if sep > fov * 0.53:
-                continue
-            px, py = sky_to_pixel(obj.az, obj.alt, az_c, alt_c, fov, R, R)
-            if px is None:
-                continue
-            obj.px = px
-            obj.py = py
-            visible.append(obj)
-
-        return visible
-
-    # ── GAST helper ───────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _gast(dt: datetime) -> float:
-        """
-        Return the Greenwich Apparent Sidereal Time in decimal hours.
-        Uses the cached skyfield Timescale if already loaded, otherwise
-        constructs one from the persistent ~/.skyfield cache.
-        """
-        try:
-            from skyfield.api import Loader
-            import os
-            if _sf_ts is not None:
-                return float(_sf_ts.from_datetime(dt).gast)
-            cache_dir = os.path.expanduser("~/.skyfield")
-            os.makedirs(cache_dir, exist_ok=True)
-            ts = Loader(cache_dir).timescale()
-            return float(ts.from_datetime(dt).gast)
-        except Exception:
-            # Fallback: GMST from Julian Date (no nutation correction)
-            jd      = (
-                (dt - datetime(2000, 1, 1, 12, tzinfo=timezone.utc))
-                .total_seconds() / 86400.0 + 2451545.0
-            )
-            t       = (jd - 2451545.0) / 36525.0
-            gmst_deg = (
-                280.46061837
-                + 360.98564736629 * (jd - 2451545.0)
-                + 0.000387933 * t ** 2
-                - t ** 3 / 38710000.0
-            ) % 360.0
-            return gmst_deg / 15.0
-
-    # ── DSO list ──────────────────────────────────────────────────────────────
-
-    def _dso_list(self, config, gast_h: float) -> list[SkyObject]:
-        """
-        Compute alt/az for the built-in DSO catalog using GAST-based
-        spherical trig.  No ephemeris required.
-        """
-        try:
-            result: list[SkyObject] = []
-            for name, obj_type, ra_d, dec_d, mag in _BUILTIN_DSOS:
-                alt, az = _radec_to_altaz(
-                    ra_d, dec_d,
-                    config.lat, config.lon,
-                    gast_h,
-                )
-                if alt < -3.0:
-                    continue
-                result.append(SkyObject(
-                    name       = name,
-                    obj_type   = obj_type,
-                    ra_deg     = ra_d,
-                    dec_deg    = dec_d,
-                    az         = az,
-                    alt        = alt,
-                    magnitude  = mag,
-                    catalog_id = name,
-                ))
-            return result
-        except Exception as exc:
-            print(f"[catalog] DSO compute error: {exc}")
-            return []
-
-    # ── Hipparcos star list (vectorised) ──────────────────────────────────────
-
-    def _star_list(self, config, gast_h: float) -> list[SkyObject]:
-        """
-        Compute alt/az for Hipparcos stars using vectorised GAST-based
-        spherical trig.  No ephemeris required.
-        """
-        try:
-            lim  = config.limiting_magnitude
-            df_v = _hip_df[_hip_df["magnitude"] <= lim].copy()
-            if df_v.empty:
-                return []
-            if len(df_v) > 6_000:
-                df_v = df_v.nsmallest(6_000, "magnitude")
-
-            ra_arr  = df_v["ra_degrees"].values.astype(np.float64)
-            dec_arr = df_v["dec_degrees"].values.astype(np.float64)
-
-            alt_arr, az_arr = _radec_to_altaz_vec(
-                ra_arr, dec_arr,
-                config.lat, config.lon,
-                gast_h,
-            )
-
-            result: list[SkyObject] = []
-            for i, (hip_id, row) in enumerate(df_v.iterrows()):
-                if alt_arr[i] < -2.0:
-                    continue
-                result.append(SkyObject(
-                    name       = f"HIP {hip_id}",
-                    obj_type   = "Star",
-                    ra_deg     = float(row["ra_degrees"]),
-                    dec_deg    = float(row["dec_degrees"]),
-                    az         = float(az_arr[i]),
-                    alt        = float(alt_arr[i]),
-                    magnitude  = float(row["magnitude"]),
-                    catalog_id = f"HIP {hip_id}",
-                ))
-            return result
-        except Exception as exc:
-            print(f"[catalog] star list error: {exc}")
-            return []
-
-    # ── nearest-object lookup ─────────────────────────────────────────────────
-
-    @staticmethod
-    def find_nearest(
-        px:      float,
-        py:      float,
-        objects: list[SkyObject],
-    ) -> Optional[SkyObject]:
-        if not objects:
-            return None
-        best_d2, best = float("inf"), None
-        for obj in objects:
-            d2 = (obj.px - px) ** 2 + (obj.py - py) ** 2
-            if d2 < best_d2:
-                best_d2, best = d2, obj
-        return best
-
-# ── mock config so we can reuse VisibleCatalog._dso_list / _star_list ─────────
-
-class _CatalogConfig:
-    """Duck-type for the config object consumed by VisibleCatalog internals."""
-    def __init__(
-        self,
-        lat:               float,
-        lon:               float,
-        elevation_m:       float,
-        limiting_magnitude: float,
-    ) -> None:
-        self.lat               = lat
-        self.lon               = lon
-        self.elevation_m       = elevation_m
-        self.limiting_magnitude = limiting_magnitude
-
-class FullSkyCatalog:
-    """
-    Builds a list of all sky objects visible above the horizon (alt > −5°)
-    without any FOV restriction.
-
-    No pixel coordinates are computed — only Az/Alt and RA/Dec are stored.
-    Objects are ready for use in sky2 click-to-select.
-    """
-
-    _delegate = VisibleCatalog()   # reuse _dso_list, _star_list, _gast
-
-    # ── async build ───────────────────────────────────────────────────────────
+    # ── async entry point ─────────────────────────────────────────────────────
 
     async def build(
         self,
@@ -453,9 +372,12 @@ class FullSkyCatalog:
         elevation_m:       float,
         use_current_time:  bool,
         manual_dt:         datetime,
-        limiting_magnitude: float,
+        limiting_magnitude: float = 6.5,
     ) -> list[SkyObject]:
-        await _ensure_hipparcos_loaded()
+        """
+        Build and return the full list of sky objects visible above −5° altitude.
+        Blocking work runs in asyncio.to_thread so the event loop is not blocked.
+        """
         return await asyncio.to_thread(
             self._build_sync,
             lat, lon, elevation_m,
@@ -463,7 +385,7 @@ class FullSkyCatalog:
             limiting_magnitude,
         )
 
-    # ── sync build (thread pool) ──────────────────────────────────────────────
+    # ── synchronous build (runs in thread pool) ───────────────────────────────
 
     def _build_sync(
         self,
@@ -474,7 +396,7 @@ class FullSkyCatalog:
         manual_dt:         datetime,
         limiting_magnitude: float,
     ) -> list[SkyObject]:
-        # Resolve observation time
+        # Resolve observation datetime
         if use_current_time:
             dt = datetime.now(timezone.utc)
         else:
@@ -482,52 +404,191 @@ class FullSkyCatalog:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
 
-        gast_h = self._delegate._gast(dt)
-        cfg    = _CatalogConfig(lat, lon, elevation_m, limiting_magnitude)
-
+        gast_h = _gast(dt)
         objects: list[SkyObject] = []
 
-        # DSOs (built-in catalog)
-        objects += self._delegate._dso_list(cfg, gast_h)
+        # 1 — Built-in DSOs (always included)
+        objects.extend(
+            self._builtin_dsos(lat, lon, gast_h, limiting_magnitude)
+        )
 
-        # Hipparcos stars up to limiting magnitude
-        if _hip_df is not None:
-            objects += self._delegate._star_list(cfg, gast_h)
+        # 2 — Starplot stars from BIG_SKY_MAG9
+        if _SP_OK and _Star is not None and _BIG_SKY_MAG9 is not None:
+            objects.extend(
+                self._starplot_stars(lat, lon, gast_h, limiting_magnitude)
+            )
 
-        # Keep only objects above the horizon
+        # 3 — Starplot DSOs from OPEN_NGC
+        #if _SP_OK and _DSO is not None and _OPEN_NGC is not None:
+        #    objects.extend(
+        #        self._starplot_dsos(lat, lon, gast_h, limiting_magnitude)
+        #    )
+
+        # Filter to objects above the horizon
         return [o for o in objects if o.alt > -5.0]
 
-    # ── nearest-object lookup ─────────────────────────────────────────────────
+    # ── source loaders ────────────────────────────────────────────────────────
+
+    def _builtin_dsos(
+        self,
+        lat:               float,
+        lon:               float,
+        gast_h:            float,
+        limiting_magnitude: float,
+    ) -> list[SkyObject]:
+        """Load the hand-curated _BUILTIN_DSOS with current alt/az."""
+        result: list[SkyObject] = []
+        for name, obj_type, ra_d, dec_d, mag in _BUILTIN_DSOS:
+            # Include even faint objects from the builtin list —
+            # they are all important radio / named sources
+            alt, az = _radec_to_altaz(ra_d, dec_d, lat, lon, gast_h)
+            result.append(SkyObject(
+                name       = name,
+                obj_type   = obj_type,
+                ra_deg     = ra_d,
+                dec_deg    = dec_d,
+                az         = az,
+                alt        = alt,
+                magnitude  = mag,
+                catalog_id = name,
+            ))
+        return result
+
+    def _starplot_stars(
+        self,
+        lat:               float,
+        lon:               float,
+        gast_h:            float,
+        limiting_magnitude: float,
+    ) -> list[SkyObject]:
+        """
+        Load stars from starplot BIG_SKY_MAG9 up to limiting_magnitude.
+        Uses vectorised alt/az computation for speed.
+        """
+        try:
+            stars = _Star.find(
+                catalog = _BIG_SKY_MAG9,
+                where   = [_.magnitude <= limiting_magnitude],
+            )
+            if not stars:
+                return []
+
+            ra_arr  = np.array([s.ra  for s in stars], dtype=np.float64)
+            dec_arr = np.array([s.dec for s in stars], dtype=np.float64)
+
+            alt_arr, az_arr = _radec_to_altaz_vec(
+                ra_arr, dec_arr, lat, lon, gast_h
+            )
+
+            result: list[SkyObject] = []
+            for i, s in enumerate(stars):
+                alt = float(alt_arr[i])
+                az  = float(az_arr[i])
+                # Pre-filter to above horizon for speed
+                if alt < -1.0:
+                    continue
+                disp_name = _star_display_name(s)
+                hip       = getattr(s, "hip", None)
+                cat_id    = f"HIP {hip}" if hip else disp_name
+                result.append(SkyObject(
+                    name       = disp_name,
+                    obj_type   = "Star",
+                    ra_deg     = float(s.ra),
+                    dec_deg    = float(s.dec),
+                    az         = az,
+                    alt        = alt,
+                    magnitude  = float(s.magnitude) if s.magnitude is not None else None,
+                    catalog_id = cat_id,
+                ))
+            return result
+
+        except Exception as exc:
+            print(f"[catalog] starplot star load error: {exc}")
+            return []
+
+    def _starplot_dsos(
+        self,
+        lat:               float,
+        lon:               float,
+        gast_h:            float,
+        limiting_magnitude: float,
+    ) -> list[SkyObject]:
+        """
+        Load DSOs from starplot OPEN_NGC up to limiting_magnitude.
+        Objects with no magnitude are included (many bright DSOs lack mag data).
+        """
+        try:
+            # Query: magnitude <= limit, OR magnitude is None (unknown/extended)
+            dsos = _DSO.find(
+                catalog = _OPEN_NGC,
+                where   = [
+                    (_.magnitude <= limiting_magnitude)
+                ],
+            )
+            if not dsos:
+                return []
+
+            ra_arr  = np.array([d.ra  for d in dsos], dtype=np.float64)
+            dec_arr = np.array([d.dec for d in dsos], dtype=np.float64)
+
+            alt_arr, az_arr = _radec_to_altaz_vec(
+                ra_arr, dec_arr, lat, lon, gast_h
+            )
+
+            result: list[SkyObject] = []
+            for i, d in enumerate(dsos):
+                alt = float(alt_arr[i])
+                az  = float(az_arr[i])
+                if alt < -5.0:
+                    continue
+                mag = getattr(d, "magnitude", None)
+                result.append(SkyObject(
+                    name       = _dso_display_name(d),
+                    obj_type   = _dso_type_name(getattr(d, "type", "DSO")),
+                    ra_deg     = float(d.ra),
+                    dec_deg    = float(d.dec),
+                    az         = az,
+                    alt        = alt,
+                    magnitude  = float(mag) if mag is not None else None,
+                    catalog_id = _dso_catalog_id(d),
+                ))
+            return result
+
+        except Exception as exc:
+            print(f"[catalog] starplot DSO load error: {exc}")
+            return []
+
+    # ── nearest-object query ──────────────────────────────────────────────────
 
     @staticmethod
     def find_nearest_altaz(
         az:          float,
         alt:         float,
         objects:     list[SkyObject],
-        max_sep_deg: float = 10.0,
+        max_sep_deg: float = 2.0,
     ) -> Optional[SkyObject]:
         """
         Return the catalog object with the smallest great-circle angular
         separation from (az, alt), within max_sep_deg degrees.
-        Returns None if no object is within the tolerance.
+        Returns None if no object falls within the tolerance.
         """
         if not objects:
             return None
 
-        a1r  = math.radians(az)
-        e1r  = math.radians(alt)
-        s1a  = math.sin(e1r)
-        c1a  = math.cos(e1r)
+        e1r = math.radians(alt)
+        a1r = math.radians(az)
+        s1  = math.sin(e1r)
+        c1  = math.cos(e1r)
 
         best_sep = float(max_sep_deg)
-        best_obj = None
+        best_obj: Optional[SkyObject] = None
 
         for obj in objects:
-            a2r = math.radians(obj.az)
-            e2r = math.radians(obj.alt)
+            e2r   = math.radians(obj.alt)
+            a2r   = math.radians(obj.az)
             cos_c = max(-1.0, min(1.0,
-                s1a * math.sin(e2r)
-                + c1a * math.cos(e2r) * math.cos(a1r - a2r)
+                s1 * math.sin(e2r)
+                + c1 * math.cos(e2r) * math.cos(a1r - a2r)
             ))
             sep = math.degrees(math.acos(cos_c))
             if sep < best_sep:
@@ -535,20 +596,3 @@ class FullSkyCatalog:
                 best_obj = obj
 
         return best_obj
-
-
-# ── coordinate helpers (used by page) ─────────────────────────────────────────
-
-def cartesian_to_altaz(x: float, y: float, z: float) -> tuple[float, float]:
-    """
-    Inverse of _altaz_to_cartesian from sky2 page.
-    THREE.js convention: Y=up, Az 0=North=+Z, Az 90=East=+X.
-    """
-    r   = math.sqrt(x * x + y * y + z * z)
-    if r < 1e-9:
-        return 0.0, 0.0
-    alt = math.degrees(math.asin(max(-1.0, min(1.0, y / r))))
-    az  = math.degrees(math.atan2(x, z)) % 360.0
-    return az, alt
-
-

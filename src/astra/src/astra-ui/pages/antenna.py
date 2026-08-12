@@ -192,26 +192,14 @@ async def _send_slew(axis, ccw, rate, timeout=1.0):
         case 'alt':
             maxis = '2'
         case 'both':
-            maxis = '3'
+            return
 
     cmd.target_info = {
         'axis':maxis,'ccw':ccw, 'rate':rate, 'timeout':timeout
     }
     await astra_cmd.send(cmd,AstraSetTargetCommand)
 
-async def _send_track_object(object_name, track=False):
-    cmd = AstraSetTargetCommand()
-    cmd.timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    cmd.target_type = 'object'
-    match object_name.lower():
-        case 'sun' | 'moon' | 'venus' | 'mars' | 'jupiter' | 'saturn': 
-            ot = 'planet'
-        case _:
-            ot = 'catalog'
-    cmd.target_info = {
-        'object_type':ot, 'object_name':object_name, 'track':track
-    }
-    await astra_cmd.send(cmd,AstraSetTargetCommand)
+
 
 # ── page ──────────────────────────────────────────────────────────────────────
 
@@ -228,7 +216,7 @@ def create() -> None:
             'alt_rate': 1.0
         }
 
-        _TELEMETRY_INTERVAL = 0.1
+        _TELEMETRY_INTERVAL = 0.05
         _PLOT_INTERVAL = 1.0   # seconds between automatic plot refreshes
 
         # slew state — tracks which direction button is held
@@ -441,14 +429,14 @@ def create() -> None:
                                             badge.set_text(f"{v:.2f} °/s")
                                             if ax == 'az':
                                                 _ui_state['az_rate'] = v
-                                                axv = 0
+                                                axv = '1'
                                             elif ax == 'alt':
                                                 _ui_state['alt_rate'] = v
-                                                axv = 1
+                                                axv = '2'
                                             else:
                                                 pass
 
-                                            await _send_set_rate(axv, v)
+                                            await _send_set_rate(_ui_state['az_rate'], _ui_state['alt_rate'])
 
                                     with ui.column().classes("gap-1 w-full"):
                                         with ui.row().classes(
@@ -542,7 +530,7 @@ def create() -> None:
                                     az_r = _ui_state['az_rate']
                                     alt_r = _ui_state['alt_rate']
 
-                                    #print("_trackobj : ", ra_dms, dec_dd, az_r, alt_r)
+                                    print("_trackobj : ", ra_dms, dec_dd, az_r, alt_r)
                                                                     
                                     await _send_goto_radec(ra_dms[0], ra_dms[1], ra_dms[2], dec_dd, az_r, alt_r, track=False)
 
@@ -797,18 +785,17 @@ def create() -> None:
             async def _slew_tick() -> None:
                 if not _slew["active"] or _slew["axis"] is None:
                     return
-                rate = (
-                    float(az_rate_sld.value)
-                    if _slew["axis"] == "az"
-                    else float(alt_rate_sld.value)
-                )
+                if _slew["axis"] == "az":
+                    rate = float(az_rate_sld.value)
+                else:
+                    rate = float(alt_rate_sld.value)
                 
                 await _send_slew(_slew["axis"], _slew["sign"], rate)
 
-            ui.timer(0.20, _slew_tick)
+            ui.timer(0.500, _slew_tick)
 
             # ══════════════════════════════════════════════════════════════════
-            # DISPLAY REFRESH  (500 ms)  — async so MongoDB query runs off-loop
+            # DISPLAY REFRESH  (50 ms)  — async so MongoDB query runs off-loop
             # ══════════════════════════════════════════════════════════════════
             async def _refresh() -> None:
                 now = datetime.now(UTC)
@@ -830,18 +817,21 @@ def create() -> None:
                 az_mode = await astra_state.antenna_state.get('mount-mode-az')
                 alt_mode = await astra_state.antenna_state.get('mount-mode-alt')
 
-                # print("pobj -> ", pobj)
-                # print("robj -> ", robj)
+                #print("pobj -> ", pobj)
+                #print("robj -> ", robj)
+
+                #print("azm -> ", az_mode)
+                #print("altm -> ", alt_mode)
 
                 mstat_az = "MOVING" if az_mode.moving else "STOP"
                 mstat_alt = "MOVING" if alt_mode.moving else "STOP"
 
                 pos_labels["az"].set_text(f"{pobj.pointing_az:.2f}")
                 pos_labels["alt"].set_text(f"{pobj.pointing_alt:.2f}")
-                pos_labels["az_rate"].set_text(f"{robj.az_rate:+.1f}")
-                pos_labels["alt_rate"].set_text(f"{robj.alt_rate:+.1f}")
+                pos_labels["az_rate"].set_text(f"{robj.az_rate:.1f}")
+                pos_labels["alt_rate"].set_text(f"{robj.alt_rate:.1f}")
 
-                status_lbl.set_text(f"AZ: {mstat_az} ALT: {mstat_alt}")
+                status_lbl.set_text(f"    AZ: {mstat_az} ALT: {mstat_alt}")
 
                 # if tel.epoch > 0:
                 #     age = now - tel.epoch

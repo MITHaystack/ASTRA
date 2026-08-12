@@ -116,17 +116,34 @@ def _to_decimal_year(dt: datetime) -> float:
     
     return dt.year + (year_elapsed / year_duration)
 
-def _to_altaz_from_radec(tstamp, lat, lon, alt, ra_hr,ra_min,ra_sec,dec):
-    print("1", ra_hr, ra_min, ra_sec, dec)
-    target = SkyCoord(ra=f"{ra_hr}h{ra_min}m{ra_sec}s",dec=dec,frame='icrs')
-    print("2")
-    location = EarthLocation(lon=lon*u.deg,lat=lat*u.deg,height=alt*u.m)
-    print("3")
-    altaz_frame = AltAz(obstime=tstamp,location=location)
-    print("4")
-    target_altaz = target.transform_to(altaz_frame)
-    print("5")
-    return (target_altaz.az, target_altaz.alt)
+def _to_altaz_from_radec(tstamp, lat, lon, alt, ra_hr, ra_min, ra_sec, dec):
+    try:
+        print("to altaz : ", tstamp, lat, lon, alt, ra_hr, ra_min, ra_sec, dec)
+        target = SkyCoord(ra=f"{ra_hr}h{ra_min}m{ra_sec}s",dec=dec*u.deg,frame='icrs')
+        location = EarthLocation(lon=lon*u.deg,lat=lat*u.deg,height=alt*u.m)
+        target_altaz = target.transform_to(AltAz(obstime=tstamp,location=location))
+
+        tgt_az = float(target_altaz.az.to_value(u.deg))
+        tgt_alt = float(target_altaz.alt.to_value(u.deg))
+
+        # rotate to zero centered coordinate frame
+        if tgt_az > 180.0:
+            tgt_az = tgt_az - 360.0 
+
+        if tgt_alt < 0.0:
+            tgt_alt = 0.0
+
+        if tgt_alt > 89.5:
+            tgt_alt = 89.5
+
+        print("to altaz :", tgt_az, tgt_alt)
+
+    except Exception as e:
+        print(e)
+        traceback.print_exc() 
+        return (0.0,0.0)
+
+    return (tgt_az, tgt_alt)
 
 def _apply_antenna_offsets(offsets, az, alt, azr, altr):
     return (az + offsets.offset_az, alt + offsets.offset_alt, azr + offsets.offset_azr, altr + offsets.offset_altr)
@@ -176,6 +193,11 @@ def _on_target(pnt, tgt_az, tgt_alt, az_err = 0.05, alt_err = 0.05):
 
     return on_az and on_alt
 
+def _compute_declination(dyr, lat, lon, alt):
+    gmag = GeoMag()
+    decl = gmag.calculate(lat, lon, alt, dyr)
+    return decl.d
+
 """
     Handle motion control of the mount. 
 """
@@ -196,8 +218,8 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
         'timestamp': datetime.now(timezone.utc).timestamp(),
         'tgt_az'   : 0.0,
         'tgt_alt'  : 0.0,
-        'tgt_azr'  : 0.0,
-        'tgt_altr' : 0.0
+        'tgt_azr'  : 1.0,
+        'tgt_altr' : 1.0
     }
 
     # IMU calibration motion command
@@ -209,7 +231,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
     slew_state = {
         'axis' : 0,
         'ccw' : False,
-        'rate' : 0.0,
+        'rate' : 1.0,
         'timeout' : 1.0,
     }
 
@@ -236,9 +258,8 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                         loc_data = ccmd
                         # compute the declination from the location and store it
                         dyr = _to_decimal_year(datetime.now())
-                        gmag = GeoMag()
-                        decl = gmag.calculate(loc_data['latitude'], loc_data['longitude'], loc_data['altitude'],dyr)
-                        loc_data['declination'] = dyr
+                        decl = _compute_declination(dyr,loc_data['latitude'], loc_data['longitude'], loc_data['altitude'])
+                        loc_data['declination'] = decl
                         # update 
                         await antenna_state.update('astra-location', loc_data)
                     case 'astra-set-offset-cmd':
@@ -296,7 +317,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                         ccmd = _command_cleanup(cmd)
                         assert validate_command(ccmd,AstraSetRateCommand)
                         rate_data = ccmd
-                        await antenna_state.update('astra-mount-rate',rate_data,True)
+                        await antenna_state.update('mount-rate',rate_data,True)
                     case 'astra-set-target-cmd':
                         print("got set target")
                         ccmd = _command_cleanup(cmd)
@@ -363,8 +384,8 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             print('. target = standby')
                             motion_target['tgt_az'] = motion_start_point['az']
                             motion_target['tgt_alt'] = motion_start_point['alt']
-                            motion_target['tgt_azr'] = 0.0
-                            motion_target['tgt_altr'] = 0.0
+                            motion_target['tgt_azr'] = 1.0
+                            motion_target['tgt_altr'] = 1.0
                             motion_expected_time = 1.0
                             send_motion_command = True
 
@@ -421,7 +442,8 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             motion_state = 'update-target'
 
                         case 'radec':
-                            print('. target = radec')
+                            print('. target = radec !')
+                            
                             loc = await antenna_state.get('astra-location')
                             rate = await antenna_state.get('mount-rate')
                             tgt_tstamp = target.timestamp
@@ -432,6 +454,8 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             tgt_ra_s = target.target_info['target_ra_s']
                             tgt_dec = target.target_info['target_dec']
                             track = target.target_info['track']
+                        
+                            print(f"radec: {tgt_tstamp}, {tgt_ra_h}, {tgt_ra_m}, {tgt_ra_s}, {tgt_dec}")
 
                             tgt_az, tgt_alt = _to_altaz_from_radec(tgt_tstamp, loc.latitude, loc.longitude, 
                                                              loc.altitude, tgt_ra_h, tgt_ra_m, tgt_ra_s, 
@@ -445,8 +469,12 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             motion_target['tgt_azr'] = rate.az_rate
                             motion_target['tgt_altr'] = rate.alt_rate
 
+                            print('. radec motion target ', tgt_az, tgt_alt, rate.az_rate, rate.alt_rate)
+
                             az_expected_time = abs(motion_start_point['az']-motion_target['tgt_az']) / motion_target['tgt_azr']
                             alt_expected_time = abs(motion_start_point['alt']-motion_target['tgt_alt']) / motion_target['tgt_altr']
+
+                            print('. radec about to senc command ', az_expected_time, alt_expected_time)
                         
                             send_motion_command = True
                             motion_expected_time = max(az_expected_time, alt_expected_time)
@@ -467,6 +495,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             send_motion_command = True
                             motion_expected_time = target.target_info['timeout']
                             motion_state = 'update-target'
+
                         case 'object':
                             print('. target = object (no implemented)')
                             motion_state = 'standby'
@@ -724,31 +753,25 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                                 match slew_state['axis']: 
                                     case '1':
                                         print("... az slew")
-                                        azsr = slew_state['az_rate']
-                                        if slew_state['az_ccw']:
+                                        azsr = slew_state['rate']
+                                        az_ccw = slew_state['ccw']
+                                        if az_ccw:
                                             azsr = -azsr
-                                        async with mount_lock:
-                                            mount.track_rate(0,azsr)
-                                    case '2':
-                                        print("... alt slew")
-                                        altsr = slew_state['alt_rate']
-                                        if slew_state['alt_ccw']:
-                                            altsr = -altsr
-                                        async with mount_lock:
-                                            mount.track_rate(1,altsr)
-                                    case '3':
-                                        print("... both slew")
-                                        azsr = slew_state['az_rate']
-                                        if slew_state['az_ccw']:
-                                            azsr = -azsr
-                                        async with mount_lock:
-                                            mount.track_rate(0,azsr)
+                                        print(f"... az slew {az_ccw} {azsr}")
 
-                                        altsr = slew_state['alt_rate']
-                                        if slew_state['alt_ccw']:
-                                            altsr = -altsr
                                         async with mount_lock:
-                                            mount.track_rate(1,altsr)
+                                            mount.track_rate('1',azsr)
+                                        print("... az slew complete")
+                                    case '2':
+                                        altsr = slew_state['rate']
+                                        alt_ccw = slew_state['ccw']
+                                        if alt_ccw:
+                                            altsr = -altsr
+                                        print(f"... alt slew {alt_ccw} {altsr}")
+                                        async with mount_lock:
+                                            mount.track_rate('2',altsr)
+                                        print("... alt slew complete")
+
                                     case _:
                                         pass
                     case _:
@@ -764,11 +787,11 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                 continue
         except Exception as e:
             motion_state = 'standby'
-            if options.verbose:
-                traceback.print_exc() 
-                print(e)
-            else:
-                pass
+            #if options.verbose:
+            traceback.print_exc() 
+            print(e)
+            #else:
+            #    pass
 
         loop_cnt += 1
 
@@ -949,6 +972,20 @@ async def ai_mqtt_handler(options, antenna_state, logQ, telemetry_period):
                                         await antenna_state.update('astra-imu',tdata)
                                     case 'astra-gps-data':
                                         await antenna_state.update('astra-gps',tdata)
+
+                                        cloc = await antenna_state.get('astra-location-data')
+                                        if cloc.gps_location and tdata['fix']:
+                                            dyr = _to_decimal_year(datetime.now())
+                                            decl = _compute_declination(dyr,tdata['latitude'], tdata['longitude'], tdata['altitude'])
+                                            gps_loc = {
+                                                'latitude'        : tdata['latitude'],
+                                                'longitude'       : tdata['longitude'],
+                                                'altitude'        : tdata['altitude'],
+                                                'declination'     : decl
+                                            }
+
+                                            await antenna_state.update('astra-location-data')
+
                                     case _:
                                         if options.verbose:
                                             print("unknown telemetry event {tdata}")
@@ -1133,10 +1170,10 @@ async def main():
     print("set update periods")
     # set update periods in seconds, a bit fine grained
     
-    motion_period = 0.025
+    motion_period = 0.05
     position_period = 0.1
     log_period = 0.1
-    telemetry_period = 0.1
+    telemetry_period = 0.05
     cmd_period = 0.1
      
     print("activate interfaces")
