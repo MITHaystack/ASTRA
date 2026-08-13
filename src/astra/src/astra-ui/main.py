@@ -30,7 +30,6 @@ def main() -> None:
     )
 
     antenna.create()
-    calibration.create()
     settings.create()
     spectrometer.create()
     camera.create()

@@ -32,8 +32,13 @@ import plotly.graph_objects as go
 from fastapi.responses import Response as HTTPResponse
 from nicegui import app, ui
 
+from astropy.io import fits
+
 from .. theme import frame
 from .. camera.engine import CameraConfig, CameraEngine, FrameData
+
+from .. state import astra_state, astra_sub, astra_cmd, motion_history
+from astradata.objects import *
 
 # ── module-level singleton ─────────────────────────────────────────────────────
 _config = CameraConfig()
@@ -181,7 +186,7 @@ def create() -> None:
                         # Exposure in seconds → converted to µs on apply
                         exp_num = _param_control(
                             "Exposure (s)",
-                            lo=0.001, hi=60.0,
+                            lo=0.001, hi=10.0,
                             default=_config.exposure_us / 1e6,
                             step=0.001, fmt="%.3f",
                             color="sky",
@@ -202,38 +207,10 @@ def create() -> None:
                         )
 
                     # ── row 2: advanced ───────────────────────────────────────
-                    with ui.expansion("Advanced  —  bit depth · Bayer · WB · display",
+                    with ui.expansion("Advanced  — White Balance · display",
                                       icon="tune") \
                             .classes("w-full text-slate-400 text-sm"):
                         with ui.column().classes("p-2 gap-4"):
-
-                            with ui.row().classes("flex-wrap gap-6 items-start"):
-                                with ui.column().classes("gap-1 min-w-40"):
-                                    ui.label("Bit Depth").classes("text-xs text-slate-400")
-                                    bit_sel = ui.toggle(
-                                        {8: "8-bit", 16: "16-bit"},
-                                        value=_config.bit_depth,
-                                    ).props("dense")
-
-                                with ui.column().classes("gap-1 min-w-40"):
-                                    ui.label("Bayer Pattern").classes("text-xs text-slate-400")
-                                    bayer_sel = ui.select(
-                                        ["RGGB", "BGGR", "GRBG", "GBRG"],
-                                        value=_config.bayer_pattern,
-                                    ).props("dark dense")
-
-                                with ui.column().classes("gap-1 min-w-40"):
-                                    ui.label("Display Scale").classes("text-xs text-slate-400")
-                                    scale_sel = ui.select(
-                                        {0.25: "¼ ×", 0.5: "½ ×", 1.0: "1 ×"},
-                                        value=_config.display_scale,
-                                    ).props("dark dense")
-
-                                with ui.column().classes("gap-1 min-w-40"):
-                                    ui.label("JPEG Quality").classes("text-xs text-slate-400")
-                                    quality_num = ui.number(
-                                        min=40, max=99, value=_config.jpeg_quality,
-                                    ).props("dark dense")
 
                             # White-balance
                             ui.separator().classes("bg-slate-700 my-1")
@@ -254,8 +231,8 @@ def create() -> None:
                                     step=0.01, fmt="%.2f", color="blue",
                                 )
                             ui.label(
-                                "⚠  WB and display scale changes take effect on next "
-                                "Apply or Start/Stop cycle."
+                                "⚠  WB changes take effect on next "
+                                "Snapshot or Stop cycle."
                             ).classes("text-xs text-slate-500 italic")
 
                     # ── row 3: actions ────────────────────────────────────────
@@ -356,28 +333,17 @@ def create() -> None:
                                 .classes("text-sm font-semibold text-slate-200")
 
                         with ui.column().classes("gap-1.5 w-full"):
-                            s_min   = ui.label("—")
-                            s_max   = ui.label("—")
-                            s_mean  = ui.label("—")
-                            s_std   = ui.label("—")
-                            s_exp   = ui.label("—")
-                            s_gain  = ui.label("—")
-                            s_off   = ui.label("—")
-                            s_ts    = ui.label("—")
-
                             with ui.grid(columns=2).classes("w-full gap-y-1"):
-                                for lbl, val in [
-                                    ("Min",       s_min),
-                                    ("Max",       s_max),
-                                    ("Mean",      s_mean),
-                                    ("Std Dev",   s_std),
-                                    ("Exposure",  s_exp),
-                                    ("Gain",      s_gain),
-                                    ("Offset",    s_off),
-                                    ("Timestamp", s_ts),
-                                ]:
-                                    ui.label(lbl).classes("text-xs text-slate-500")
-                                    val.classes("text-xs font-mono text-slate-200")
+                                s_min   = _badge("circle", "Min", "text-slate-500")
+                                s_max   = _badge("circle", "Max", "text-slate-500")
+                                s_mean  = _badge("circle", "Mean", "text-slate-500")
+                                s_std   = _badge("circle", "Std Dev", "text-slate-500")
+                                s_exp   = _badge("filter_frames", "Exposure", "text-slate-500")
+                                s_gain  = _badge("filter_frames", "Gain", "text-slate-500")
+                                s_off   = _badge("filter_frames", "Offset", "text-slate-500")
+
+                            s_ts    = _badge("speed", "Timestamp", "text-slate-500")
+                                
 
             # ══════════════════════════════════════════════════════════════════
             # CALLBACKS
@@ -393,10 +359,6 @@ def create() -> None:
                     float(wb_g.value or 1.0),
                     float(wb_b.value or 1.0),
                 )
-                _config.bayer_pattern  = bayer_sel.value
-                _config.bit_depth      = int(bit_sel.value)
-                _config.display_scale  = float(scale_sel.value)
-                _config.jpeg_quality   = int(quality_num.value or 84)
 
             # Connect
             async def _on_connect() -> None:
@@ -485,24 +447,57 @@ def create() -> None:
                 ts  = datetime.now(UTC).isoformat().replace("+00:00", "Z")
                 ui.download(
                     frm.jpeg_bytes,
-                    filename=f"astra_{ts}.jpg",
+                    filename=f"astra@{ts}.jpg",
                     media_type="image/jpeg",
                 )
                 ui.notify("Downloading JPEG…", position="top-right")
 
             save_j.on_click(_on_save_jpeg)
 
-            # Save RAW (numpy .npy)
-            def _on_save_raw() -> None:
+            # Save RAW numpy data as a FITS image
+            async def _on_save_raw() -> None:
                 frm = _engine.get_latest_frame()
                 if frm is None:
                     ui.notify("No frame captured yet", type="warning"); return
-                buf = io.BytesIO()
-                np.save(buf, frm.raw)
+
+                pos = await astra_state.antenna_state.get('astra-pointing')
+                loc = await astra_state.antenna_state.get('astra-location')
+
                 ts  = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+                # create FITS data from numpy raw data array
+                hdu = fits.PrimaryHDU(data=frm.raw)
+                # load up header information
+                hdu.header['INSTRUME'] = 'ASTRA'
+                hdu.header['PROGRAM'] = 'astra-ui.camera'
+                hdu.header['TELESCOP'] = 'SV106'
+                hdu.header['APERTURE'] = 70.0
+                hdu.header['FOCALLEN'] = 240.0
+                hdu.header['XPIXSZ'] = 1.45
+                hdu.header['YPIXSZ'] = 1.45
+                hdu.header['BAYERPAT'] = _engine.config.bayer_pattern
+                hdu.header['DATE-OBS'] = ts
+                hdu.header['EXPTIME'] = _engine.config.exposure_us / 1.0E6
+                hdu.header['SITELAT'] = loc.latitude
+                hdu.header['SITELONG'] = loc.longitude
+                hdu.header['SITEELEV'] = loc.altitude
+                hdu.header['CTYPE1'] = 'AZLN-TAN'
+                hdu.header['CTYPE2'] = 'AZLT-TAN'
+                hdu.header['CRPIX1'] = round(frm.width / 2.0)
+                hdu.header['CRPIX2'] = round(frm.height / 2.0)
+                hdu.header['CRVAL1'] = pos.pointing_az
+                hdu.header['CRVAL2'] = pos.pointing_alt
+                hdu.header['CUNIT1'] = 'deg'
+                hdu.header['CUNIT2'] = 'deg'
+
+                hdul = fits.HDUList([hdu])
+                
+                buf = io.BytesIO()
+                hdul.writeto(buf)
+                
                 ui.download(
                     buf.getvalue(),
-                    filename=f"astra_{ts}_raw.npy",
+                    filename=f"astra@{ts}.fits",
                     media_type="application/octet-stream",
                 )
                 ui.notify("Downloading RAW numpy array…", position="top-right")
@@ -524,13 +519,13 @@ def create() -> None:
 
             def _update_stats(frm: FrameData) -> None:
                 st = frm.stats
-                s_min.set_text(f"{st['min']:.0f}")
-                s_max.set_text(f"{st['max']:.0f}")
-                s_mean.set_text(f"{st['mean']:.1f}")
-                s_std.set_text(f"{st['std']:.1f}")
-                s_exp.set_text(f"{_config.exposure_us / 1e3:.1f} ms")
-                s_gain.set_text(str(_config.gain))
-                s_off.set_text(str(_config.offset))
+                s_min.set_text(f"Min {st['min']:.0f}")
+                s_max.set_text(f"Max {st['max']:.0f}")
+                s_mean.set_text(f"Mean {st['mean']:.1f}")
+                s_std.set_text(f"Std Dev {st['std']:.1f}")
+                s_exp.set_text(f"Exposure {_config.exposure_us / 1e3:.1f} ms")
+                s_gain.set_text(f"Gain {str(_config.gain)}")
+                s_off.set_text(f"Offset {str(_config.offset)}")
                 s_ts.set_text(
                     datetime.now(UTC).isoformat().replace("+00:00", "Z")
                 )

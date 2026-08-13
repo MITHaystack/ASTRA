@@ -863,7 +863,17 @@ async def antenna_telemetry_handler(options, mount, mount_lock, antenna_state, t
             # send latest pointing estimate at full rate
             await telemetryQ.put(antenna_state.pointing)
 
+            # now check if configuration related info has changed, update local file info
+            if event_cnt % 60 == 0:
 
+                cfg_data = await serialize(antenna_state.location)
+
+                with open("/data/config/astra-config.json","wb") as f:
+                    f.write(cfg_data)
+                    f.flush()
+
+                #print('wrote config information')
+                    
         except (serial.SerialException, EOFError) as e:
                 if options.verbose:
                     print("serial exception EOF error, attempt reconnect")
@@ -876,11 +886,11 @@ async def antenna_telemetry_handler(options, mount, mount_lock, antenna_state, t
                 # just pass through and let the other state machine stuff run
                 pass
         except Exception as e:
-            if options.verbose:
-                print(e)
-                traceback.print_exc() 
-            else:
-                pass
+            #if options.verbose:
+            print(e)
+            traceback.print_exc() 
+            #else:
+            #    pass
     
         event_cnt += 1
 
@@ -1147,6 +1157,18 @@ async def log_mqtt_handler(options, logQ, log_period):
 
         await asyncio.sleep(log_period)
 
+def _load_config():
+
+    config = None
+    try:
+        with open('/data/config/astra-config.json', 'rb') as f:
+            config = f.read()
+    except FileNotFoundError:
+        print(f"Error: The configuration file '/data/config/astra-config.json' was not found.")
+        return None
+    
+    return config
+
 """
     Primary Thread Startup 
 """
@@ -1162,6 +1184,17 @@ async def main():
     mlck = asyncio.Lock()
     antenna_state = AstraAntennaState()
 
+    # load last state - configuration information on startup - if available
+    try:
+        config = _load_config()
+        loc_data = deserialize(config)
+        await antenna_state.update('astra-location', loc_data)
+        print("config is:")
+        print(config)
+    except:
+        traceback.print_exc() 
+
+    
     print("create async control")
     eventQ = asyncio.Queue() # in bound telemetry events
     telemetryQ = asyncio.Queue() # out bound telemetry

@@ -54,7 +54,7 @@ class CameraConfig:
     wb_g:             float = 1.0
     wb_b:             float = 1.0
     bayer_pattern:    str   = "RGGB"
-    display_scale:    float = 0.5
+    display_scale:    float = 1.0
     jpeg_quality:     int   = 84
     stream_fps_limit: float = 20.0
     use_simulation:   bool  = True

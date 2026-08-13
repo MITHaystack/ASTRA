@@ -162,16 +162,7 @@ def create() -> None:
             "last_mqtt_render_t":    datetime.now(UTC),
             "last_control_change_t": datetime.now(UTC),
             "control_render_due":    True,
-            "resolution": 1000,
-            "limiting_magnitude": 3.0,
-            "fov": 60.0,
-            "show_constellation_lines": True,
-            "show_constellation_labels": True,
-            "show_altaz_grid": True,
-            "show_radec_grid": False,
-            "show_milky_way": True,
-            "show_nebula": False,
-            "show_open_clusters": False
+
         }
 
 
@@ -186,23 +177,32 @@ def create() -> None:
                     # OBSERVER LOCATION
                     # ══════════════════════════════════════════════════════════════════
                     with ui.row().classes("p-5 gap-4 min-w-80"):
-                        with ui.column().classes("p-5 gap-4 min-w-80"):
+                        with ui.row().classes("p-5 gap-4 min-w-80"):
                             with ui.row().classes("items-center gap-2"):
                                 ui.icon("place").classes("text-sky-400 text-xl")
                                 ui.label("Site Configuration") \
                                     .classes("font-semibold text-white text-base")
+                                
                             osite = ui.input("Site Name",
-                                    value="MIT Haystack Observatory") \
+                                    placeholder="MIT Haystack Observatory") \
                                 .props("dark").classes("w-full")
-                            olat = ui.number("Latitude (°N)",  value=42.6233,
+                            olat = ui.number("Latitude (°N)",  placeholder=42.6233,
                                     format="%.4f") \
                                 .props("dark").classes("w-full")
-                            olong = ui.number("Longitude (°E)", value=-71.4882,
+                            olong = ui.number("Longitude (°E)", placeholder=-71.4882,
                                     format="%.4f") \
                                 .props("dark").classes("w-full")
-                            oelev = ui.number("Elevation (m)",  value=131.0,
+                            oelev = ui.number("Elevation (m)",  placeholder=131.0,
                                     format="%.1f") \
                                 .props("dark").classes("w-full")
+
+                            async def _refresh_location() -> None:
+                            
+                                osite.value("TEST")
+                            
+                            # Initial read on page load + periodic refresh every 60 s
+                            ui.timer(0.1,  _refresh_location, once=True)
+                            ui.timer(60.0, _refresh_location)                           
                             
                             async def _on_location() -> None:
                                     loc_btn.set_enabled(False)
@@ -241,48 +241,49 @@ def create() -> None:
                                     "text-right max-w-xs"
                                 )
 
+                
                         # ══════════════════════════════════════════════════════════════════
                         # OBSERVER TIME
                         # ══════════════════════════════════════════════════════════════════
-                        with ui.column().classes("p-5 gap-4 min-w-80"):
-                                with ui.row().classes("items-center gap-2"):
-                                    ui.icon("place").classes("text-sky-400 text-xl")
-                                    ui.label("Observer Location & Time") \
-                                        .classes("font-semibold text-white text-base")
+                        # with ui.column().classes("p-5 gap-4 min-w-80"):
+                        #         with ui.row().classes("items-center gap-2"):
+                        #             ui.icon("place").classes("text-sky-400 text-xl")
+                        #             ui.label("Observer Location & Time") \
+                        #                 .classes("font-semibold text-white text-base")
 
-                                with ui.row().classes("flex-wrap gap-5 items-end w-full"):
-                                    ui.separator().classes("bg-slate-700 w-px h-auto mx-1")
-                                    with ui.column().classes("gap-1"):
-                                        ui.label("Time Source").classes(
-                                            "text-xs text-slate-400 font-medium"
-                                        )
-                                        time_src = ui.toggle(
-                                            {"live": "🕐 Live UTC", "manual": "📅 Manual"},
-                                            value="live",
-                                        ).props("dense")
-                                    with ui.column().classes("gap-1") as manual_col:
-                                        ui.label("Manual Date / Time (UTC)").classes(
-                                            "text-xs text-slate-400"
-                                        )
-                                        with ui.row().classes("gap-2 items-center"):
-                                            date_in = (
-                                                ui.date(
-                                                    value=datetime.now(UTC).isoformat().replace("+00:00", "Z")
-                                                )
-                                                .props("dark dense").classes("w-40")
-                                            )
-                                            time_in = (
-                                                ui.time(
-                                                    value=datetime.now(UTC).isoformat().replace("+00:00", "Z")
-                                                )
-                                                .props("dark dense").classes("w-32")
-                                            )
-                                    manual_col.set_visibility(False)
-                                    time_src.on_value_change(
-                                        lambda _: manual_col.set_visibility(
-                                            time_src.value == "manual"
-                                        )
-                                    )
+                        #         with ui.row().classes("flex-wrap gap-5 items-end w-full"):
+                        #             ui.separator().classes("bg-slate-700 w-px h-auto mx-1")
+                        #             with ui.column().classes("gap-1"):
+                        #                 ui.label("Time Source").classes(
+                        #                     "text-xs text-slate-400 font-medium"
+                        #                 )
+                        #                 time_src = ui.toggle(
+                        #                     {"live": "🕐 Live UTC", "manual": "📅 Manual"},
+                        #                     value="live",
+                        #                 ).props("dense")
+                        #             with ui.column().classes("gap-1") as manual_col:
+                        #                 ui.label("Manual Date / Time (UTC)").classes(
+                        #                     "text-xs text-slate-400"
+                        #                 )
+                        #                 with ui.row().classes("gap-2 items-center"):
+                        #                     date_in = (
+                        #                         ui.date(
+                        #                             value=datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                        #                         )
+                        #                         .props("dark dense").classes("w-40")
+                        #                     )
+                        #                     time_in = (
+                        #                         ui.time(
+                        #                             value=datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                        #                         )
+                        #                         .props("dark dense").classes("w-32")
+                        #                     )
+                        #             manual_col.set_visibility(False)
+                        #             time_src.on_value_change(
+                        #                 lambda _: manual_col.set_visibility(
+                        #                     time_src.value == "manual"
+                        #                 )
+                        #             )
 
                                     # ══════════════════════════════════════════════════════════════════
                 # DISPLAY CONTROLS
@@ -594,131 +595,124 @@ def create() -> None:
                 ui.timer(0.1,  _refresh_storage, once=True)
                 ui.timer(30.0, _refresh_storage)
 
-            # ── save / reset row ──────────────────────────────────────────────
-            with ui.row().classes("w-full justify-end gap-3 mt-2"):
-                ui.button("Reset Defaults", icon="restart_alt") \
-                    .props("outline").classes("text-slate-400")
-                ui.button("Save Settings",  icon="save") \
-                    .classes("bg-sky-600 hover:bg-sky-500 text-white")
-                
 
             # ══════════════════════════════════════════════════════════════════
             # COMMAND MQTT SINK  (replaces per-page MQTT client)
             # ══════════════════════════════════════════════════════════════════
-            with ui.card().classes(
-                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
-            ):
-                with ui.column().classes("p-5 gap-4 w-full"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("sensors").classes("text-emerald-400 text-xl")
-                        ui.label("Telescope Motion Commands") \
-                            .classes("font-semibold text-white text-base")
-                    ui.label(
-                        "The motion control commander is shared across all pages. "
-                        "Reconfigure here to change the MQTT command broker or topic."
-                    ).classes("text-xs text-slate-500")
+            # with ui.card().classes(
+            #     "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            # ):
+            #     with ui.column().classes("p-5 gap-4 w-full"):
+            #         with ui.row().classes("items-center gap-2"):
+            #             ui.icon("sensors").classes("text-emerald-400 text-xl")
+            #             ui.label("Telescope Motion Commands") \
+            #                 .classes("font-semibold text-white text-base")
+            #         ui.label(
+            #             "The motion control commander is shared across all pages. "
+            #             "Reconfigure here to change the MQTT command broker or topic."
+            #         ).classes("text-xs text-slate-500")
 
-                    with ui.row().classes("flex-wrap gap-4 items-end w-full"):
-                        broker_in = (
-                            ui.input(
-                                "MQTT Broker Host",
-                                value=astra_cmd.config.broker_host,
-                            )
-                            .props("dark dense").classes("min-w-44")
-                        )
-                        port_in = (
-                            ui.number(
-                                "Port",
-                                value=astra_cmd.config.broker_port,
-                                min=1, max=65535, format="%d",
-                            )
-                            .props("dark dense").classes("min-w-28")
-                        )
-                        topic_in = (
-                            ui.input(
-                                "Command Channel",
-                                value=astra_cmd.config.topic,
-                            )
-                            .props("dark dense").classes("min-w-52")
-                        )
+            #         with ui.row().classes("flex-wrap gap-4 items-end w-full"):
+            #             broker_in = (
+            #                 ui.input(
+            #                     "MQTT Broker Host",
+            #                     value=astra_cmd.config.broker_host,
+            #                 )
+            #                 .props("dark dense").classes("min-w-44")
+            #             )
+            #             port_in = (
+            #                 ui.number(
+            #                     "Port",
+            #                     value=astra_cmd.config.broker_port,
+            #                     min=1, max=65535, format="%d",
+            #                 )
+            #                 .props("dark dense").classes("min-w-28")
+            #             )
+            #             topic_in = (
+            #                 ui.input(
+            #                     "Command Channel",
+            #                     value=astra_cmd.config.topic,
+            #                 )
+            #                 .props("dark dense").classes("min-w-52")
+            #             )
 
-                        async def _do_reconnect() -> None:
-                            host  = broker_in.value  or "localhost"
-                            port  = int(port_in.value or 1883)
-                            topic = topic_in.value   or "astra/antenna/command"
-                            await astra_cmd.configure(host, port, topic)
-                            await astra_cmd.disconnect() # drop current connection
-                            await astra_cmd.connect() # activate with new connection info
+            #             async def _do_reconnect() -> None:
+            #                 host  = broker_in.value  or "localhost"
+            #                 port  = int(port_in.value or 1883)
+            #                 topic = topic_in.value   or "astra/antenna/command"
+            #                 await astra_cmd.configure(host, port, topic)
+            #                 await astra_cmd.disconnect() # drop current connection
+            #                 await astra_cmd.connect() # activate with new connection info
 
-                            ui.notify(
-                                f"Reconnecting to MQTT commands @ → "
-                                f"{host}:{port}  {topic}",
-                                type="positive", position="top-right",
-                            )
+            #                 ui.notify(
+            #                     f"Reconnecting to MQTT commands @ → "
+            #                     f"{host}:{port}  {topic}",
+            #                     type="positive", position="top-right",
+            #                 )
 
-                        ui.button("Reconnect", icon="wifi",
-                                  on_click=_do_reconnect) \
-                            .classes(
-                                "bg-emerald-700 hover:bg-emerald-600 text-white"
-                            )
+            #             ui.button("Reconnect", icon="wifi",
+            #                       on_click=_do_reconnect) \
+            #                 .classes(
+            #                     "bg-emerald-700 hover:bg-emerald-600 text-white"
+            #                 )
 
 
-            # ══════════════════════════════════════════════════════════════════
-            # TELEMETRY MQTT CHANNEL  (replaces per-page MQTT client)
-            # ══════════════════════════════════════════════════════════════════
-            with ui.card().classes(
-                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
-            ):
-                with ui.column().classes("p-5 gap-4 w-full"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("sensors").classes("text-emerald-400 text-xl")
-                        ui.label("Telescope Motion Telemetry Source") \
-                            .classes("font-semibold text-white text-base")
-                    ui.label(
-                        "The motion control subscriber is shared across all pages. "
-                        "Reconfigure here to change the MQTT broker or topic."
-                    ).classes("text-xs text-slate-500")
+            # # ══════════════════════════════════════════════════════════════════
+            # # TELEMETRY MQTT CHANNEL  (replaces per-page MQTT client)
+            # # ══════════════════════════════════════════════════════════════════
+            # with ui.card().classes(
+            #     "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            # ):
+            #     with ui.column().classes("p-5 gap-4 w-full"):
+            #         with ui.row().classes("items-center gap-2"):
+            #             ui.icon("sensors").classes("text-emerald-400 text-xl")
+            #             ui.label("Telescope Motion Telemetry Source") \
+            #                 .classes("font-semibold text-white text-base")
+            #         ui.label(
+            #             "The motion control subscriber is shared across all pages. "
+            #             "Reconfigure here to change the MQTT broker or topic."
+            #         ).classes("text-xs text-slate-500")
 
-                    with ui.row().classes("flex-wrap gap-4 items-end w-full"):
-                        broker_in = (
-                            ui.input(
-                                "MQTT Broker Host",
-                                value=astra_sub.config.broker_host,
-                            )
-                            .props("dark dense").classes("min-w-44")
-                        )
-                        port_in = (
-                            ui.number(
-                                "Port",
-                                value=astra_sub.config.broker_port,
-                                min=1, max=65535, format="%d",
-                            )
-                            .props("dark dense").classes("min-w-28")
-                        )
-                        topic_in = (
-                            ui.input(
-                                "Telemetry Channel",
-                                value=astra_sub.config.topic,
-                            )
-                            .props("dark dense").classes("min-w-52")
-                        )
+            #         with ui.row().classes("flex-wrap gap-4 items-end w-full"):
+            #             broker_in = (
+            #                 ui.input(
+            #                     "MQTT Broker Host",
+            #                     value=astra_sub.config.broker_host,
+            #                 )
+            #                 .props("dark dense").classes("min-w-44")
+            #             )
+            #             port_in = (
+            #                 ui.number(
+            #                     "Port",
+            #                     value=astra_sub.config.broker_port,
+            #                     min=1, max=65535, format="%d",
+            #                 )
+            #                 .props("dark dense").classes("min-w-28")
+            #             )
+            #             topic_in = (
+            #                 ui.input(
+            #                     "Telemetry Channel",
+            #                     value=astra_sub.config.topic,
+            #                 )
+            #                 .props("dark dense").classes("min-w-52")
+            #             )
 
-                        async def _do_reconnect() -> None:
-                            host  = broker_in.value  or "localhost"
-                            port  = int(port_in.value or 1883)
-                            topic = topic_in.value   or "astra/antenna/telemetry/#"
-                            await astra_sub.configure(host, port, topic)
-                            await astra_sub.disconnect() # drop current connection
-                            await astra_sub.connect() # activate with new connection info
+            #             async def _do_reconnect() -> None:
+            #                 host  = broker_in.value  or "localhost"
+            #                 port  = int(port_in.value or 1883)
+            #                 topic = topic_in.value   or "astra/antenna/telemetry/#"
+            #                 await astra_sub.configure(host, port, topic)
+            #                 await astra_sub.disconnect() # drop current connection
+            #                 await astra_sub.connect() # activate with new connection info
 
-                            ui.notify(
-                                f"Reconnecting to MQTT telemetry @ → "
-                                f"{host}:{port}  {topic}",
-                                type="positive", position="top-right",
-                            )
+            #                 ui.notify(
+            #                     f"Reconnecting to MQTT telemetry @ → "
+            #                     f"{host}:{port}  {topic}",
+            #                     type="positive", position="top-right",
+            #                 )
 
-                        ui.button("Reconnect", icon="wifi",
-                                  on_click=_do_reconnect) \
-                            .classes(
-                                "bg-emerald-700 hover:bg-emerald-600 text-white"
-                            )
+            #             ui.button("Reconnect", icon="wifi",
+            #                       on_click=_do_reconnect) \
+            #                 .classes(
+            #                     "bg-emerald-700 hover:bg-emerald-600 text-white"
+            #                 )

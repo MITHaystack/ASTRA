@@ -141,6 +141,38 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.10) -> str:
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return f"rgba({r},{g},{b},{alpha})"
 
+
+def _cal_row(
+    label: str,
+    color_class: str = "text-slate-400",
+) -> tuple[ui.label, ui.label]:
+    """Return (level_lbl, bar_lbl) for a calibration channel."""
+    with ui.row().classes("items-center gap-2"):
+        ui.label(label).classes("text-xs text-slate-400 w-14")
+        bar  = ui.label("□□□").classes("font-mono text-sm text-slate-600")
+        lvl  = ui.label("0 / 3").classes("text-xs text-slate-500 w-10")
+    return bar, lvl
+
+def _set_cal(bar: ui.label, lvl: ui.label, level: int) -> None:
+    colors = {
+        0: ("text-slate-600",  "text-slate-500"),
+        1: ("text-orange-400", "text-orange-300"),
+        2: ("text-yellow-400", "text-yellow-300"),
+        3: ("text-green-400",  "text-green-300"),
+    }
+    bc, lc = colors.get(level, colors[0])
+    filled = "■" * level + "□" * (3 - level)
+    bar.set_text(filled)
+    bar.classes(
+        remove="text-slate-600 text-orange-400 text-yellow-400 text-green-400",
+        add=bc,
+    )
+    lvl.set_text(f"{level} / 3")
+    lvl.classes(
+        remove="text-slate-500 text-orange-300 text-yellow-300 text-green-300",
+        add=lc,
+    )
+
 # command helpers
 
 async def _stop_cmd():
@@ -652,6 +684,28 @@ def create() -> None:
                         ui.button("Goto RaDec", icon="send",
                                   on_click=_goto_radec) \
                             .classes("bg-violet-700 hover:bg-violet-600 text-white")
+
+            # ── MOTION CALIBRATION ─────────────────────────────────────
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl flex-1"
+            ):
+                with ui.column().classes("p-5 gap-4"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("explore").classes("text-sky-400 text-xl")
+                        ui.label("Motion Calibration") \
+                            .classes("font-semibold text-white text-base")
+
+                    with ui.grid(columns=4).classes("gap-x-6 gap-y-1 w-full"):
+                        cal_sys_bar,   cal_sys_lvl   = _cal_row("System")
+                        cal_gyro_bar,  cal_gyro_lvl  = _cal_row("Gyro")
+                        cal_accel_bar, cal_accel_lvl = _cal_row("Accel")
+                        cal_mag_bar,   cal_mag_lvl   = _cal_row("Mag")
+
+                    ui.label(
+                        "3 = fully calibrated  ·  0 = not calibrated"
+                    ).classes("text-[10px] text-slate-600 italic")
+
+
             # ══════════════════════════════════════════════════════════════════
             # MOTION HISTORY CARD
             # ══════════════════════════════════════════════════════════════════
@@ -832,6 +886,15 @@ def create() -> None:
                 pos_labels["alt_rate"].set_text(f"{robj.alt_rate:.1f}")
 
                 status_lbl.set_text(f"    AZ: {mstat_az} ALT: {mstat_alt}")
+
+                imu_obj = await astra_state.antenna_state.get('astra-imu')
+                imu_cal = imu_obj.cal_status
+
+                # calibration indicators
+                _set_cal(cal_sys_bar,   cal_sys_lvl,  imu_cal[0])
+                _set_cal(cal_gyro_bar,  cal_gyro_lvl,  imu_cal[1])
+                _set_cal(cal_accel_bar, cal_accel_lvl, imu_cal[2])
+                _set_cal(cal_mag_bar,   cal_mag_lvl,   imu_cal[3])
 
                 # if tel.epoch > 0:
                 #     age = now - tel.epoch

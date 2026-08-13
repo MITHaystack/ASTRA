@@ -141,7 +141,6 @@ def _nav_links() -> None:
     _internal_link("my_location",    "Control",     "/antenna")
     _internal_link("graphic_eq",     "Radio",       "/spectrometer")
     _internal_link("camera_alt",     "Camera",      "/camera")
-    _internal_link("tune",           "Calibration", "/calibration")
     _internal_link("settings",       "Settings",    "/settings")
 
     _separator()
