@@ -2,19 +2,18 @@ from pathlib import Path
 
 from nicegui import app, ui
 
-from .state import astra_sub, astra_cmd, motion_history, imu_history, gps_history
-
+from .state import astra_sub, astra_cmd
 from .pages import (
-    antenna, settings, spectrometer, camera, sky, calibration,
+    antenna, settings, spectrometer, camera, sky
 )
 
 @app.on_startup
 async def _startup() -> None:
 
     # MongoDB history interface startup
-    await motion_history.initialize()
-    await imu_history.initialize()
-    await gps_history.initialize()
+    #await motion_history.initialize()
+    #await imu_history.initialize()
+    #await gps_history.initialize()
 
     # ASTRA state subscriber — single aiomqtt task for all pages
     await astra_sub.start()

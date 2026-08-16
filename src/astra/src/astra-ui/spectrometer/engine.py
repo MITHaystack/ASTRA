@@ -69,9 +69,9 @@ class SpectrometerConfig:
     pluto_uri:        str   = "ip:192.168.2.1"
 
     # RF parameters
-    center_freq_MHz:   int   = 1421   # MHz
+    center_freq_MHz:   int   = 1420   # MHz
     sample_rate_MHz:   int   = 2   # MHz
-    gain_db:           float = 60.0          # dB, 0–73
+    gain_db:           float = 50.0          # dB, 0–73
 
     # Processing
     fft_size:         int   = 1024
@@ -79,7 +79,7 @@ class SpectrometerConfig:
     waterfall_rows:   int   = 128
 
     # Snapshot
-    snapshot_dir:     str   = "/data/rf/snapshot"
+    snapshot_dir:     str   = "/data/rf/"
     snapshot_chan:    str   = "ch0"
     snapshot_dur_s:   float = 5.0
 
@@ -111,14 +111,13 @@ class SpectrometerEngine:
 
         # ── output state (mutated only in event loop) ─────────────────────────
         self._freqs:      np.ndarray = np.zeros(self.config.fft_size)
-        self._psd:        np.ndarray = np.full(self.config.fft_size, -120.0)
-        self._psd_lin:    np.ndarray = np.full(self.config.fft_size, 1E-12)
+        self._psd_l:    np.ndarray = np.full(self.config.fft_size, 1E-12)
         self._pvt_t:      deque[float] = deque(maxlen=256)
         self._pvt_p:      deque[float] = deque(maxlen=256)
-        self._waterfall:  np.ndarray  = np.full(
-            (self.config.waterfall_rows, self.config.fft_size), -120.0
-        )
-        self._wf_elapsed: np.ndarray = np.zeros(self.config.waterfall_rows)
+        #self._waterfall:  np.ndarray  = np.full(
+        #    (self.config.waterfall_rows, self.config.fft_size), -120.0
+        #)
+        #self._wf_elapsed: np.ndarray = np.zeros(self.config.waterfall_rows)
         self._t0          = _time.time()
         self._n_spectra   = 0
 
@@ -136,7 +135,7 @@ class SpectrometerEngine:
         return self._running and bool(self._task and not self._task.done())
 
     def get_psd(self) -> tuple[np.ndarray, np.ndarray]:
-        return self._freqs.copy(), self._psd.copy(), self._psd_lin.copy()
+        return self._freqs.copy(), self._psd_l.copy()
 
     def get_power_vs_time(self) -> tuple[np.ndarray, np.ndarray]:
         if not self._pvt_t:
@@ -301,12 +300,11 @@ class SpectrometerEngine:
             while self._running:
                 result = await asyncio.to_thread(self._compute_integration)
                 if result is not None and self._running:
-                    psd, psd_lin, pvt, t_now = result
+                    psd_l, pvt_l, t_now = result
                     # All mutations in event loop — no locks needed
-                    self._psd              = psd
-                    self._psd_lin          = psd_lin
+                    self._psd_l          = psd_l
                     self._pvt_t.append(t_now)
-                    self._pvt_p.append(pvt)
+                    self._pvt_p.append(pvt_l)
                     # self._waterfall        = np.roll(self._waterfall,  1, axis=0)
                     # self._waterfall[0]     = psd
                     # self._wf_elapsed       = np.roll(self._wf_elapsed, 1)
@@ -350,12 +348,12 @@ class SpectrometerEngine:
             chunk = samples[k * N:(k + 1) * N]
             acc  += np.abs(np.fft.fftshift(np.fft.fft(chunk * window))) ** 2
         acc /= actual
+
         psd_lin = np.maximum(acc / (win_power * sr), 1e-30)
-        psd_db = 10.0 * np.log10(psd_lin)
-        pvt_db = 10.0 * np.log10(np.maximum(np.mean(acc / win_power), 1e-30))
+        pvt_lin = np.maximum(np.mean(acc / (win_power*sr)), 1e-30)
         t_now  = _time.time() - self._t0
         
-        return psd_db, psd_lin, pvt_db, t_now
+        return psd_lin, pvt_lin, t_now
 
     # ── SDR hardware methods (all blocking) ───────────────────────────────────
 
@@ -559,7 +557,7 @@ class SpectrometerEngine:
         N = self.config.fft_size
         W = self.config.waterfall_rows
         self._psd        = np.full(N, -120.0, dtype=np.float64)
-        self._psd_lin    = np.full(N, 1E-12, dtype=np.float64)
+        self._psd_l    = np.full(N, 1E-12, dtype=np.float64)
         self._pvt_t      = deque(maxlen=512)
         self._pvt_p      = deque(maxlen=512)
         self._waterfall  = np.full((W, N), -120.0, dtype=np.float64)

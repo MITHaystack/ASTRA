@@ -62,6 +62,7 @@ def _base_layout(**kw) -> dict:
         font          = dict(color="#94a3b8", size=11),
         showlegend    = False,
         margin        = dict(l=58, r=18, t=14, b=46),
+        uirevision    = 'constant_value'
     )
     base.update(kw)
     return base
@@ -98,6 +99,7 @@ def _make_psd(freqs: np.ndarray, psd: np.ndarray, psd_peak: np.ndarray, psd_avg:
         xaxis=_axis("Frequency (MHz)"),
         yaxis=_axis("Power (dBFS/Hz)"),
     )
+    
     return fig
 
 
@@ -139,6 +141,59 @@ def _make_waterfall(
     return fig
 
 
+
+# def _spectral_sub(received, reference_bg, beta=1.0):
+#     """Subtracts background power profile across the spectrum while preserving phase."""
+#     # Transform to frequency domain
+#     R_fft = received
+#     B_fft = reference_bg
+    
+#     # Calculate magnitude and phase profiles
+#     r_mag = np.abs(R_fft)
+#     r_phase = np.angle(R_fft)
+#     b_mag = np.abs(B_fft)
+    
+#     # Subtract magnitudes (power spectrum profile) and clamp negative values to 0
+#     clean_mag = r_mag - beta * b_mag
+#     clean_mag = np.maximum(clean_mag, 0)
+    
+#     # Reconstruct complex signal using original phase info
+#     clean_fft = clean_mag * np.exp(1j * r_phase)
+#     return clean_fft
+
+def _spectral_model(freq, data, degree=7):
+
+    # model the spectrum as a higher order polynomial. 
+    
+    model = np.polynomial.Polynomial.fit(freq,data,degree)
+    background = model(freq)
+
+    return model, background
+
+def polynomial_background_removal(x, y, degree=5, iterations=10):
+    """
+    Fits a smooth polynomial baseline by iteratively removing 
+    peaks that sit above the estimated background.
+    """
+    # Create an initial copy of the data to modify during iterations
+    y_work = np.copy(y)
+    
+    for _ in range(iterations):
+        # Fit polynomial using NumPy's modern API
+        poly = np.polynomial.Polynomial.fit(x, y_work, deg=degree)
+        baseline = poly(x)
+        
+        # Clip peaks: force values above the current baseline down to the baseline
+        y_work = np.minimum(y_work, baseline)
+        
+    # Final smooth baseline
+    final_baseline = np.polynomial.Polynomial.fit(x, y_work, deg=degree)(x)
+    
+    # Subtract background from original data
+    corrected_y = y - final_baseline
+
+    return corrected_y, final_baseline
+
 # ── page ──────────────────────────────────────────────────────────────────────
 
 def create() -> None:
@@ -154,8 +209,21 @@ def create() -> None:
             "integration_time" : 30.0,
             "psd_peak" : None,
             "psd_avg" : None,
-            "psd_int_cnt" : 1
-
+            "psd_int_cnt" : 1,
+            "remove_bg" : False,
+            "collect_bg" : False,
+            "rf_bg" : None,
+            "rf_bg_avg" : None,
+            "rf_bg_freq" : None,
+            "rf_bg_ts" : None,
+            "rf_bg_model" : None,
+            "scale_cal" : False,
+            "collect_cal" : False,
+            "rf_cal" : None,
+            "rf_cal_avg" : None,
+            "rf_cal_freq" : None,
+            "rf_cal_model" : None,
+            "rf_cal_ts" : None,
             }
 
         with frame("Radio Spectrometer"):
@@ -202,8 +270,20 @@ def create() -> None:
                             ui.label("power  vs  frequency").classes(
                                 "text-xs text-slate-500"
                             )
-                        f0, p0, p0l = _engine.get_psd()
-                        psd_chart = ui.plotly(_make_psd(f0, p0, p0, p0)).classes("w-full")
+                        f0, p0l = _engine.get_psd()
+                        p0l = np.clip(p0l,a_min=1E-12,a_max=None)
+                        p0db = 10.0*np.log10(p0l)
+                        fig = _make_psd(f0, p0db, p0db, p0db)
+                        psd_d = fig.to_plotly_json()
+                        fname = f"astra-psd@{int(datetime.now(UTC).timestamp()):d}"
+
+                        psd_d['config'] = {
+                            'toImageButtonOptions': {
+                                'format': 'png',         # Options: 'png', 'svg', 'jpeg', 'webp'
+                                'filename': fname,
+                            }
+                        }
+                        psd_chart = ui.plotly(psd_d).classes("w-full")                       
 
                 with ui.card().classes(
                     "bg-[#1e293b] border border-[#334155] rounded-xl flex-1 min-w-0"
@@ -218,8 +298,18 @@ def create() -> None:
                             ui.label("total band power  vs  time").classes(
                                 "text-xs text-slate-500"
                             )
-                        t0, pv0 = _engine.get_power_vs_time()
-                        pvt_chart = ui.plotly(_make_pvt(t0, pv0)).classes("w-full")
+                        t0, pv0l = _engine.get_power_vs_time()
+                        pv0l = np.clip(pv0l,a_min=1E-12,a_max=None)
+                        pv0db = 10.0*np.log10(pv0l)
+                        fig = _make_pvt(t0, pv0db)
+                        pvt_d = fig.to_plotly_json()
+                        # pvt_d['config'] = {
+                        #     'toImageButtonOptions': {
+                        #         'format': 'png',         # Options: 'png', 'svg', 'jpeg', 'webp'
+                        #         'filename': 'astra_psd',
+                        #     }
+                        # }
+                        pvt_chart = ui.plotly(pvt_d).classes("w-full")
 
             # ══════════════════════════════════════════════════════════════════
             # WATERFALL
@@ -281,27 +371,27 @@ def create() -> None:
                     # wf_chart.data = []
                     _cs_state["clear_plots"] = False
 
-                freqs, psd, psd_l = _engine.get_psd()
+                    _cs_state["remove_bg"] = False
+                    _cs_state["collect_bg"] = False
+                    _cs_state["rf_bg_avg"] = None
+                    _cs_state["rf_bg"] = None
+                    _cs_state["rf_bg_ts"] = None
+                    _cs_state["rf_bg_model"] = None
 
-                # check psd length, new length is a reset
+                    _cs_state["scale_cal"] = False
+                    _cs_state["collect_cal"] = False
+                    _cs_state["rf_cal_avg"] = None
+                    _cs_state["rf_cal"] = None
+                    _cs_state["rf_cal_ts"] = None
+                    _cs_state["rf_cal_model"] = None
 
-                if((_cs_state['psd_peak'] is not None) and (_cs_state['psd_avg'] is not None)):
-                    if (len(psd) != len(_cs_state['psd_peak'])
-                        or (len(psd) != len(_cs_state['psd_avg']))
-                        ):
-                        _engine.clear_data()
-                        psd_chart.data = []
-                        pvt_chart.data = []
-                        _cs_state['psd_peak'] = None
-                        _cs_state['psd_lin'] = None
-                        _cs_state['psd_avg'] = None
-                        _cs_state['psd_int_cnt'] = 1
+                freqs, psd_l = _engine.get_psd()
 
                 # keep and compute a peak hold 
                 if _cs_state['psd_peak'] is None:
-                    _cs_state['psd_peak'] = psd
+                    _cs_state['psd_peak'] = psd_l
                 else:
-                    _cs_state['psd_peak'] = np.maximum(_cs_state['psd_peak'],psd)
+                    _cs_state['psd_peak'] = np.maximum(_cs_state['psd_peak'],psd_l)
 
                 # moving average update, this way the display can update continously
                 if _cs_state['psd_avg'] is None:
@@ -309,25 +399,114 @@ def create() -> None:
                     _cs_state['psd_int_cnt'] = 1
                 else:
                     if _cs_state['psd_int_cnt'] >= _cs_state['integration_time'] / _cs_state['subintegration_time']:
+
+                        # capture collects for background and cal
+                        if _cs_state['collect_bg']:
+                            _cs_state['rf_bg_avg'] = _cs_state['psd_avg']
+                            _cs_state['rf_bg_ts'] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                            # compute model fit
+                            bg_mdl, rf_bg = _spectral_model(freqs, _cs_state['psd_avg'])
+                            _cs_state['rf_bg'] = rf_bg
+                            _cs_state['rf_bg_model'] = bg_mdl
+                            _cs_state['collect_bg'] = False
+                            
+                            ui.notify(
+                                        f"Background Collected",
+                                        type="positive",
+                                        position="top-right",
+                                        multi_line=True,
+                                    )
+
+                        if _cs_state['collect_cal']:
+                            _cs_state['rf_cal_avg'] = _cs_state['psd_avg']
+                            _cs_state['rf_cal_ts'] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                            # compute model fit
+                            cal_mdl, rf_cal = _spectral_model(freqs, _cs_state['psd_avg'])
+                            _cs_state['rf_cal'] = rf_cal
+                            _cs_state['rf_cal_model'] = cal_mdl
+                            _cs_state['collect_cal'] = False
+                            ui.notify(
+                                        f"Calibration Collected",
+                                        type="positive",
+                                        position="top-right",
+                                        multi_line=True,
+                                    )
+
+                        # reset for new integration interval
                         _cs_state['psd_avg'] = psd_l
                         _cs_state['psd_int_cnt'] = 1
+
                     else:
                         _cs_state['psd_avg'] = _cs_state['psd_avg'] + (psd_l - _cs_state['psd_avg'])/_cs_state['psd_int_cnt']
                         _cs_state['psd_int_cnt'] += 1
-                
-                psd_chart.figure["data"][0]["x"] = freqs
-                psd_chart.figure["data"][0]["y"] = psd
-                psd_chart.figure["data"][1]["x"] = freqs
-                psd_chart.figure["data"][1]["y"] = _cs_state['psd_peak']
-                psd_chart.figure["data"][2]["x"] = freqs
-                psd_avg_log = 10.0 * np.log10(_cs_state['psd_avg'])
-                psd_chart.figure["data"][2]["y"] = psd_avg_log
 
+                psd_l = np.clip(psd_l,a_min=1E-12,a_max=None)
+                psd_peak_l = np.clip(_cs_state['psd_peak'],a_min=1E-12,a_max=None)
+                psd_avg_l = np.clip(_cs_state['psd_avg'],a_min=1E-12,a_max=None)
+
+                if _cs_state['remove_bg'] and _cs_state['rf_bg'] is not None:
+                    psd_l, psd_bg = polynomial_background_removal(_cs_state['rf_bg_avg'], psd_l)
+                    psd_peak_l, psd_bg = polynomial_background_removal(_cs_state['rf_bg_avg'], psd_peak_l)
+                    psd_avg_l, psd_bg = polynomial_background_removal(_cs_state['rf_bg_avg'], psd_avg_l)
+                    
+                if _cs_state['scale_cal'] and _cs_state['rf_cal'] is not None:
+                    psd_l = psd_l / _cs_state['rf_cal']
+                    psd_peak_l = psd_peak_l / _cs_state['rf_cal']
+                    psd_avg_l = psd_avg_l / _cs_state['rf_cal']
+
+                # clip to avoid negative numbers
+                psd_l = np.clip(psd_l, a_min=1E-12, a_max=None)
+                psd_peak_l = np.clip(psd_peak_l, a_min=1E-12, a_max=None)
+                psd_avg_l = np.clip(psd_avg_l, a_min=1E-12, a_max=None)
+
+                psd_db = 10.0*np.log10(psd_l)
+                psd_peak_db = 10.0*np.log10(psd_peak_l)
+                psd_avg_db = 10.0*np.log10(psd_avg_l)
+            
+                psd_chart.figure["data"][0]["x"] = freqs
+                psd_chart.figure["data"][0]["y"] = psd_db
+                psd_chart.figure["data"][1]["x"] = freqs
+                psd_chart.figure["data"][1]["y"] = psd_peak_db
+                psd_chart.figure["data"][2]["x"] = freqs
+                psd_chart.figure["data"][2]["y"] = psd_avg_db
+
+                fname = f"astra-psd@{int(datetime.now(UTC).timestamp()):d}"
+
+                # psd_d["config"].update({
+                #              'toImageButtonOptions': {
+                #                  'format': 'png',         # Options: 'png', 'svg', 'jpeg', 'webp'
+                #                  'filename': fname,
+                #              }})
+                # psd_chart._props['options']['config'] = {
+                #             'toImageButtonOptions': {
+                #                 'format': 'png',         # Options: 'png', 'svg', 'jpeg', 'webp'
+                #                 'filename': fname,
+                #             }
+                #         }
                 psd_chart.update()
 
-                times, pvt = _engine.get_power_vs_time()
+                times, pvt_l = _engine.get_power_vs_time()
+
+                if _cs_state['remove_bg'] and _cs_state['rf_bg_avg'] is not None:
+                    pvt_l = pvt_l - np.mean(_cs_state['rf_bg_avg'])
+
+                if _cs_state['scale_cal'] and _cs_state['rf_cal_avg'] is not None:
+                    pvt_l = pvt_l / np.mean(_cs_state['rf_cal_avg'])
+
+                pvt_l = np.clip(pvt_l, a_min=1E-12, a_max=None)
+
+                pvt_db = 10.0 * np.log10(pvt_l)
+
                 pvt_chart.figure["data"][0]["x"] = times
-                pvt_chart.figure["data"][0]["y"] = pvt
+                pvt_chart.figure["data"][0]["y"] = pvt_db
+
+                fname = f"astra-pwr@{int(datetime.now(UTC).timestamp()):d}"
+                # pvt_d["config"].update({
+                #             'toImageButtonOptions': {
+                #                 'format': 'png',         # Options: 'png', 'svg', 'jpeg', 'webp'
+                #                 'filename': fname,
+                #             }})
+
                 pvt_chart.update()
 
                 # f_wf, el_wf, wf = _engine.get_waterfall()
@@ -344,16 +523,17 @@ def create() -> None:
                 # _cs_state["clear_plots"] = False
 
                 # ── badges ────────────────────────────────────────────────────
-                df_khz = (_config.sample_rate_MHz * 1e-3) / _config.fft_size
-                pk_idx = int(np.argmax(psd))
-                pk_pwr = float(psd[pk_idx])
-                noise  = float(np.percentile(psd, 10))
+                df_khz = (_config.sample_rate_MHz * 1e3) / _config.fft_size
+                pk_idx = int(np.argmax(psd_l))
+                psd_l = np.clip(psd_l,a_min=1E-12,a_max=None)
+                pk_pwr = 10.0*np.log10(float(psd_l[pk_idx]))
+                noise  = 10.0*np.log10(float(np.percentile(psd_l, 10)))
                 snr    = pk_pwr - noise
 
                 m_conn .set_text(
                     f"SDR: ● {_config.pluto_uri}"
                 )
-                m_freq .set_text(f"Peak:  {freqs[pk_idx]:.4f} MHz")
+                m_freq .set_text(f"Peak:  {freqs[pk_idx]:.2f} MHz")
                 m_ppwr .set_text(f"Peak:  {pk_pwr:.1f} dBFS/Hz")
                 m_noise.set_text(f"Noise: {noise:.1f} dBFS/Hz")
                 m_snr  .set_text(f"SNR:   {snr:.1f} dB")
@@ -596,13 +776,28 @@ def create() -> None:
                                 db = float(gain_sld.value or 50)
                                 gain_badge.set_text(f"{db:.0f} dB")
                                 await _engine.set_gain(db)
-                                _cs_state['clear_plots'] = True
                             # Fire on release (not on every drag tick)
                             gain_sld.on("change", lambda _: asyncio.create_task(
                                 _on_gain_change()
                             ))
 
                     ui.separator().classes("bg-slate-700/50")
+
+
+            # ── RADIO CALIBRATION ──────────────────────────────────────
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl w-full"
+            ):
+                with ui.column().classes("p-5 gap-4"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("wifi_tethering").classes(
+                            "text-amber-400 text-xl"
+                        )
+                        ui.label("Radio Calibration") \
+                            .classes("font-semibold text-white text-base")
+
+
+                    ui.separator().classes("bg-slate-700/60")
 
                     # ── calibration ───────────────────────────────────────────
                     with ui.row().classes("flex-wrap gap-5 items-end w-full"):
@@ -635,11 +830,23 @@ def create() -> None:
                             ui.label("Remove Background").classes(
                                 "text-xs text-slate-400 font-medium"
                             )
+                            async def _set_remove_bg() -> None:
+                                if rm_bg_sel.value == 'on':
+                                    _cs_state['remove_bg'] = True
+                                    
+                                else:
+                                    _cs_state['remove_bg'] = False
+                                ui.notify(
+                                    f"Remove Background -> {rm_bg_sel.value}  ",
+                                    type="positive", position="top-right",
+                                )
+                            
                             rm_bg_sel = (
                                 ui.select(
                                     ["off", "on"],
                                     value="off",
                                     label="Mode",
+                                    on_change=_set_remove_bg
                                 )
                                 .props("dark dense")
                                 .classes("min-w-36")
@@ -648,18 +855,78 @@ def create() -> None:
                             ui.label("Scale to Calibration").classes(
                                 "text-xs text-slate-400 font-medium"
                             )
+                            async def _set_scale_cal() -> None:
+                                if scale_sel.value == 'on':
+                                    _cs_state['scale_cal'] = True
+                                else:
+                                    _cs_state['scale_cal'] = False
+                                ui.notify(
+                                    f"Scale to Calibrator -> {scale_sel.value}  ",
+                                    type="positive", position="top-right",
+                                )
                             scale_sel = (
                                 ui.select(
                                     ["off", "on"],
                                     value="off",
                                     label="Mode",
+                                    on_change=_set_scale_cal
                                 )
                                 .props("dark dense")
                                 .classes("min-w-40")
                             )
 
-                        ui.space()
+                        with ui.column().classes("gap-1"):
+          
+                            async def _do_collect_bg() -> None:
+                                _cs_state['collect_bg'] = True
+                                
+                                ui.notify(
+                                    f"Background collection",
+                                    type="positive", position="top-right",
+                                )
 
-                    ui.separator().classes("bg-slate-700/50")
+                            async def _do_collect_cal() -> None:
+
+                                _cs_state['collect_cal'] = True
+
+                                ui.notify(
+                                    f"Calibrator collection",
+                                    type="positive", position="top-right",
+                                )
+                            
+                            ui.button(
+                                "Collect Background",
+                                icon="camera",
+                                on_click=_do_collect_bg,
+                            ).classes(
+                                "bg-emerald-700 hover:bg-emerald-600 "
+                                "text-white w-full"
+                            )
+        
+                            ui.button(
+                                "Collect Calibration",
+                                icon="camera",
+                                on_click=_do_collect_cal,
+                            ).classes(
+                                "bg-emerald-700 hover:bg-emerald-600 "
+                                "text-white w-full"
+                            )
+
+
+                    ui.separator().classes("bg-slate-700/60")
+
+                    with ui.row().classes("items-center gap-3 flex-wrap"):
+                        bg_ts_label = ui.label(f"Last Background: {_cs_state['rf_bg_ts']}").classes(
+                            "text-xs text-slate-500"
+                        )
+                        cal_ts_label = ui.label(f"Last Calibration: {_cs_state['rf_cal_ts']}").classes(
+                                                    "text-xs text-slate-500"
+                        )
+
+                        async def _do_ts_update():                
+                            bg_ts_label.value = f"Last Background: {_cs_state['rf_bg_ts']}"
+                            cal_ts_label.value = f"Last Calibration: {_cs_state['rf_cal_ts']}"
+
+                        ui.timer(5.0, _do_ts_update)
 
             ui.timer(0.1, _refresh)

@@ -14,13 +14,15 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from datetime import datetime, UTC, timezone
+from datetime import datetime, UTC, timezone, timedelta
 from typing import Optional
+from pathlib import Path
+import shutil
 
 from nicegui import ui
 
 from .. theme import frame
-from .. state import astra_state, astra_sub, astra_cmd, motion_history
+from .. state import astra_state, astra_sub, astra_cmd
 from astradata.objects import *
 
 from .. spectrometer.engine import SpectrometerConfig
@@ -72,7 +74,91 @@ def _bar_label(
     )
 
 
-# ── simulated clean routine ───────────────────────────────────────────────────
+def _expire_files(rm_dir_list: str, category: str, update_label, prog_bar):
+    """
+    Expires files in the target directory based on the selected age category.
+    Categories: 'hour', 'day', 'week', 'all'
+    """
+
+    # Get current time with UTC awareness
+    now = datetime.now(timezone.utc)
+    
+    # Define the time thresholds
+    thresholds = {
+        "last hour": now - timedelta(hours=1),
+        "last day": now - timedelta(days=1),
+        "last week": now - timedelta(weeks=1),
+        "all": None  # Deletes everything
+    }
+
+    if category not in thresholds:
+            raise ValueError("Invalid category. Choose from: 'hour', 'day', 'week', 'all'")
+
+    cutoff = thresholds[category]
+    deleted_count = 0   
+    prog_bar.set_value(0.0)
+
+    # quick count of all files to remove and track them for removal
+    file_count = 0
+    for rmd in rm_dir_list:
+        path = Path(rmd)
+        update_label.set_text(f"Cleanup {rmd}")
+        print(f"Scanning {rmd} to expire files in last {category}...")
+
+        for root,dirs,files in path.walk(top_down=False):
+            for file in files:
+                fpath = root / file
+                # Get file modification time
+                file_mtime = datetime.fromtimestamp(fpath.stat().st_mtime, timezone.utc)
+                
+                # Determine expiration condition
+                should_expire = (category == "all") or (file_mtime >= cutoff)
+                if should_expire:
+                    file_count += 1
+
+    update_label.set_text(f"{file_count} files to remove")
+    print(f"To remove {file_count} files...")
+    
+    for rmd in rm_dir_list:
+        path = Path(rmd)
+
+        if not path.exists() or not path.is_dir():
+            print(f"Error: {rmd} is not a valid directory.")
+            continue
+
+        update_label.set_text(f"Cleanup {rmd}")
+        print(f"Scanning {rmd} to expire files in last {category}...")
+
+        # Iterate through all files in the directory recursively
+        for root, dirs, files in path.walk(top_down=False):
+            for file in files:
+                # fpath
+                fpath = root / file
+                # Get file modification time
+                file_mtime = datetime.fromtimestamp(fpath.stat().st_mtime, timezone.utc)
+                
+                # Determine expiration condition
+                should_expire = (category == "all") or (file_mtime >= cutoff)
+                if should_expire:
+                    update_label.set_text(f"Removing {root / file}")
+                    prog_bar = (deleted_count / file_count)
+                    print(f"Expired: {root / file})")
+                    (root / file).unlink()
+                    deleted_count += 1
+
+            for dir in dirs:
+                update_label.set_text(f"Removing {root / dir}")
+                try:
+                    (root / dir).rmdir()
+                except OSError:
+                    pass # not empty means do not remove
+
+
+
+    print(f"Cleanup complete. Total files expired: {deleted_count}")
+
+
+# ── cleanup routine ───────────────────────────────────────────────────
 
 async def _run_clean(
     directory:  str,
@@ -92,15 +178,24 @@ async def _run_clean(
     clean_btn.set_enabled(False)
     prog_bar.set_visibility(True)
 
-    steps = 8
-    for i in range(steps):
-        prog_bar.set_value((i + 1) / steps)
-        status_lbl.set_text(
-            f"Cleaning  [{expire}]  [{period}]  …  step {i + 1}/{steps}"
-        )
-        # ── replace with real work here ───────────────────────────────────────
-        await asyncio.sleep(0.4)   # simulate I/O work
-        # ─────────────────────────────────────────────────────────────────────
+    rmpaths = []
+
+    match expire:
+        case 'RF':
+            rmpaths = [directory + '/rf']
+        case 'Images':
+            rmpaths = [directory + '/images']
+        case 'Telemetry':
+            print("Replace with MongoDB cleanup / expire")
+            return
+        case 'Logs':
+            rmpaths = [directory + '/logs']
+        case 'All':
+            rmpaths = [directory + '/rf', directory + '/images', directory + '/logs', directory + '/tmp']
+        case _:
+            print(f"Unknown remove command {expire}")
+
+    _expire_files(rmpaths, period, status_lbl, prog_bar)
 
     prog_bar.set_value(1.0)
     status_lbl.set_text(
@@ -197,12 +292,19 @@ def create() -> None:
                                 .props("dark").classes("w-full")
 
                             async def _refresh_location() -> None:
-                            
-                                osite.value("TEST")
-                            
-                            # Initial read on page load + periodic refresh every 60 s
-                            ui.timer(0.1,  _refresh_location, once=True)
-                            ui.timer(60.0, _refresh_location)                           
+
+                                loc = await astra_state.antenna_state.get('astra-location')
+
+                                if loc.site_name == 'unknown':
+                                    return
+
+                                osite.value = loc.site_name
+                                olat.value = loc.latitude
+                                olong.value = loc.longitude
+                                oelev.value = loc.altitude
+
+                            # Initial read on page load
+                            ui.timer(1,  _refresh_location, once=True)
                             
                             async def _on_location() -> None:
                                     loc_btn.set_enabled(False)
@@ -374,12 +476,7 @@ def create() -> None:
 
                     # ── output directory ──────────────────────────────────────
                     with ui.row().classes("items-end gap-4 flex-wrap w-full"):
-                        dir_in = (
-                            ui.input("Output Directory", value="/data/astra")
-                            .props("dark dense")
-                            .classes("flex-1 min-w-64")
-                        )
-
+                        
                         async def _on_refresh_storage() -> None:
                             await _refresh_storage()
 
@@ -441,8 +538,8 @@ def create() -> None:
                                 )
                                 expire_sel = (
                                     ui.select(
-                                        ["all", "RF", "Images", "Telemetry"],
-                                        value="all",
+                                        ["All", "RF", "Images", "Telemetry", "Logs"],
+                                        value="All",
                                         label="Data type",
                                     )
                                     .props("dark dense")
@@ -504,7 +601,7 @@ def create() -> None:
                                             if choice == "okay":
                                                 asyncio.create_task(
                                                     _run_clean(
-                                                        dir_in.value,
+                                                        "/data/", # hard code to avoid issues
                                                         expire_sel.value,
                                                         period_sel.value,
                                                         clean_status,
@@ -534,7 +631,7 @@ def create() -> None:
                                     f"This will permanently delete "
                                     f"[ {expire_sel.value} ] data from "
                                     f"[ {period_sel.value} ] in:\n"
-                                    f"{dir_in.value}"
+                                    f"{"/data"}"
                                 )
                                 confirm_radio.set_value("cancel")
                                 confirm_dialog.open()
@@ -567,7 +664,7 @@ def create() -> None:
 
                 async def _refresh_storage() -> None:
                     """Read disk usage in thread pool; update bar in event loop."""
-                    path = dir_in.value or "/data/astra"
+                    path = "/data"
                     used, total = await asyncio.to_thread(
                         _read_storage, path
                     )

@@ -33,16 +33,86 @@ from dataclasses import dataclass, field
 from datetime import datetime, UTC, timezone
 from typing import Optional
 
+import math
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from skyfield import api
+from skyfield.constants import tau
+
+## -- visibility helper
+
+
+def _calculate_lst(dt: datetime, lon_deg: float) -> float:
+    """Computes Local Sidereal Time (in hours, 0-24) given a UTC datetime
+
+    and longitude in degrees (positive East, negative West).
+    """
+    # 1. Calculate Julian Date (JD) for the given UTC datetime
+    year = dt.year
+    month = dt.month
+    day = dt.day
+    hour = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+
+    if month <= 2:
+        year -= 1
+        month += 12
+
+    A = math.floor(year / 100.0)
+    B = 2 - A + math.floor(A / 4.0)
+    JD = (
+        math.floor(365.25 * (year + 4716))
+        + math.floor(30.6001 * (month + 1))
+        + day
+        + B
+        - 1524.5
+        + hour / 24.0
+    )
+
+    # 2. Compute centuries from J2000.0
+    T = (JD - 2451545.0) / 36525.0
+
+    # 3. Compute Greenwich Mean Sidereal Time (GMST) in degrees
+    # Formula from IAU 1982 / Meeus Astronomical Algorithms
+    gmst_deg = (
+        280.46061837
+        + 360.98564736629 * (JD - 2451545.0)
+        + 0.000387933 * T**2
+        - (T**3) / 38710000.0
+    )
+
+    # Normalize GMST to 0-360 degrees
+    gmst_deg = gmst_deg % 360.0
+
+    # 4. Compute Local Sidereal Time (LST) = GMST + Longitude (East positive)
+    lst_deg = (gmst_deg + lon_deg) % 360.0
+
+    # Convert degrees to hours (0-24 hours)
+    lst_hours = lst_deg / 15.0
+
+    return lst_hours
+
+def _visible_sky(lat, lon, dt_utc=None):
+
+    # Calculate LST for given location and time
+    # Visible sky is LST +/- 6 hours modulo 24 hours
+    lst_hours = _calculate_lst(dt_utc, lon)
+    
+    # Calculate visible Declination range
+    # Objects within 90 degrees of your latitude are above the horizon
+    dec_min = max(-85.0, lat - 90.0)
+    dec_max = min(85.0, lat + 90.0)
+    
+    return lst_hours, dec_min, dec_max
+
 
 # ── starplot ──────────────────────────────────────────────────────────────────
 _SP_OK       = True
 
-from starplot import ZenithPlot, Observer, _   # type: ignore
+import starplot
+from starplot import MapPlot, HorizonPlot, ZenithPlot, Orthographic, Miller, Observer, _   # type: ignore
 from starplot.styles import PlotStyle, extensions   # type: ignore
 
 @dataclass
@@ -68,10 +138,11 @@ class SkyConfig:
     show_radec_grid:           bool = False
 
     # Limiting magnitude for the full-sky map
-    limiting_magnitude: float = 4.5
+    limiting_magnitude: float = 3.5
 
     # Render quality
-    resolution: int = 3600   # pixels of the square output PNG
+    resolution: int = 1800   # pixels of the square output PNG
+    scale: float = 1.0 
 
 
 class FullSkyRenderer:
@@ -122,7 +193,7 @@ class FullSkyRenderer:
 
     @property
     def version(self) -> str:
-        return _SP_VERSION
+        return starplot.__version__
 
     def render_async(self) -> None:
         """Schedule a background render; queues one pending if busy."""
@@ -169,29 +240,49 @@ class FullSkyRenderer:
 
         # ── find the ZENITH projection ─────────────────────────────────
         
-        print(f"[sky] rendering  Zenith"
+        print(f"[sky] rendering sky plot"
               f"res={cfg.resolution}  mag≤{cfg.limiting_magnitude}")
+        dtn = datetime.now(UTC)
+        obs = Observer(dt = dtn, lat=cfg.lat, lon = cfg.lon)
+        lst, dec_min, dec_max = _visible_sky(cfg.lat, cfg.lon, dtn)
+        ra_min = max(0.0, lst - 6.0)
+        ra_max = min(24.0,lst + 6.0)
 
-        obs = Observer(dt = datetime.now(UTC), lat=cfg.lat, lon = cfg.lon)
-        p = ZenithPlot(
-            observer=obs,
-            style=style,
-            limiting_magnitude = cfg.limiting_magnitude,
-            resolution = cfg.resolution,
-            autoscale = True
-        )
+        print("project fov ", lst, ra_min, ra_max, dec_min, dec_max)
+        
+        # p = MapPlot(
+        #     projection=Miller(),
+        #     ra_min = ra_min,
+        #     ra_max = ra_max,
+        #     dec_min = dec_min,
+        #     dec_max = dec_max,
+        #     style=style,
+        #     limiting_magnitude = cfg.limiting_magnitude,
+        #     resolution = cfg.resolution,
+        #     autoscale = True
+        # )
+        # p = ZenithPlot(
+        #     observer=obs,
+        #     style=style,
+        #     limiting_magnitude = cfg.limiting_magnitude,
+        #     resolution = cfg.resolution,
+        #     scale = cfg.scale,
+        #     autoscale = True
+        # )
 
         # ── constructor: probe kwargs progressively ───────────────────────────
-        # p = MapPlot(
-        #     projection         = Miller(),
-        #     lat                = cfg.lat,
-        #     lon                = cfg.lon,
-        #     dt                 = dt,
-        #     style              = style,
-        #     limiting_magnitude = cfg.limiting_magnitude,
-        #     resolution         = cfg.resolution,
-        #     autoscale          = True, 
-        # )
+        p = MapPlot(
+            projection         = Miller(),
+            lat                = cfg.lat,
+            lon                = cfg.lon,
+            dt                 = dtn,
+            dec_min            = dec_min,
+            dec_max            = dec_max,
+            style              = style,
+            limiting_magnitude = cfg.limiting_magnitude,
+            resolution         = cfg.resolution,
+            autoscale          = True, 
+        )
 
         # ── layers ────────────────────────────────────────────────────────────
         p.stars(where=[_.magnitude < cfg.limiting_magnitude], bayer_labels=True, where_labels=[_.magnitude < 3.5])

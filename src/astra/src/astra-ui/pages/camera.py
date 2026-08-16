@@ -37,7 +37,7 @@ from astropy.io import fits
 from .. theme import frame
 from .. camera.engine import CameraConfig, CameraEngine, FrameData
 
-from .. state import astra_state, astra_sub, astra_cmd, motion_history
+from .. state import astra_state, astra_sub, astra_cmd
 from astradata.objects import *
 
 # ── module-level singleton ─────────────────────────────────────────────────────
