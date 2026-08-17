@@ -137,6 +137,31 @@ def _external_link(
                 "shrink-0 transition-colors"
             )
 
+def _external_link_button(
+    icon_name:  str,
+    label:      str,
+    url:        str,
+    sublabel:   str = "",
+    icon_color: str = "text-slate-400",
+) -> None:
+    with ui.button(label, on_click=lambda: ui.run_javascript(url),color=None).classes("border border-slate-600 text-sm font-medium leading-tight text-slate-600 group-hover:text-slate-500"):
+        with ui.row().classes(
+            "items-center gap-3 px-4 py-3 rounded-lg cursor-pointer "
+            "hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 "
+            "transition-colors group"
+        ):
+            ui.icon(icon_name).classes(f"text-lg {icon_color} shrink-0")
+            with ui.column().classes("gap-0 flex-1 min-w-0"):
+                if sublabel:
+                    ui.label(sublabel).classes(
+                        "text-[10px] text-slate-600 group-hover:text-slate-500 "
+                        "leading-tight truncate"
+                    )
+            ui.icon("open_in_new").classes(
+                "text-xs text-slate-600 group-hover:text-slate-400 "
+                "shrink-0 transition-colors"
+            )
+
 
 def _nav_links() -> None:
     _section_label("NAVIGATION")
@@ -150,11 +175,11 @@ def _nav_links() -> None:
 
     _section_label("TOOLS")
     
-    _external_link(
+    _external_link_button(
         icon_name  = "science",
         label      = "Notebook",
-        url        = MARIMO_URL,
-        sublabel   = "localhost:2718  ·  interactive Python",
+        url        = "window.open('http://' + window.location.hostname + ':2718/', '_blank');",
+        sublabel   = "Python notebook",
         icon_color = "text-violet-400",
     )
 
