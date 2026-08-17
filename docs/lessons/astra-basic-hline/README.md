@@ -13,7 +13,7 @@ Look up the coordinates of the sun for your location and time in altitude and az
 ASTRA will now slew to point near to the sun. Since the radio telescope has a wider field of view than the optical telescope, the sun should be in the field of view.
 
 ## Activate the Radio
-Go to the Radio page of the UI. Under the "Spectrometer Control" section press "START". The spectrometer should begin to move. Wait for the hydrogen line to integrate out of the noise. It should appear as a small hump in the orange (integrated) line at around 1,420.4 MHz. 
+Go to the Radio page of the UI. Under the "Spectrometer Control" section press "START". The spectrometer should begin to move. Wait for the hydrogen line to integrate out of the noise. It should appear as a small hump in the orange (integrated) line at around 1,420.4 MHz. To zoom in on the hydrogen line, click and drag to select an area to zoom in on.
 
 ![img](img/spectrometer_control.png)
 
@@ -26,7 +26,7 @@ Point the telescope out into deep space, away from the sun and galaxy. Now go to
 ![img](img/no_h-line.png)
 
 ## Point at the Milky Way
-Find an object in the Milky Way, such as Sagitarius A*, or a bright radio star such as Cygnus A or Cassiopeia A. Find the current coordinates of this object in altitude and azimuth. Plug the coordinates into into their respective fields in the Goto Commands section and press the "GOTO ALTAZ" button. Activate the radio. 
+Find an object in the Milky Way, such as Sagitarius A* or Alpha Centauri, or a bright radio star such as Cygnus A or Cassiopeia A. Find the current coordinates of this object in altitude and azimuth. Plug the coordinates into into their respective fields in the Goto Commands section and press the "GOTO ALTAZ" button. Activate the radio. 
 
 ![img](img/galaxy_h-line.png)
 
