@@ -49,7 +49,8 @@ Our lessons are currently under development and will be released after we comple
 ### Introduction
 - [What is ASTRA?](docs/lessons/astra-intro-overview)
 - [ASTRA Setup and Transport](docs/lessons/astra-setup/README.md)
-- [Observing the Sun with ASTRA](docs/lessons/astra-basic-imaging/README.md)
+- [Observing Stars with ASTRA](docs/lessons/astra-basic-imaging/README.md)
+- [Observing the Sun with ASTRA](docs/lessons/astra-solar-imaging/README.md)
 - [Hydrogen Line Detection with ASTRA](docs/lessons/astra-basic-hline/README.md)
 
 ### Setup and Calibration
