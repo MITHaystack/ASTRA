@@ -854,16 +854,16 @@ def create() -> None:
 
                 pointing_layer.content = f'''
                     <!-- Horizontal Cross Line -->
-                    <line x1="{px - 25}" y1="{py}" x2="{px + 25}" y2="{py}" stroke="green" stroke-width="4" />
+                    <line x1="{px - 28}" y1="{py}" x2="{px + 28}" y2="{py}" stroke="green" stroke-width="4" />
                         
                     <!-- Vertical Cross Line -->
-                    <line x1="{px}" y1="{py - 25}" x2="{px}" y2="{py + 25}" stroke="green" stroke-width="4" />
+                    <line x1="{px}" y1="{py - 28}" x2="{px}" y2="{py + 28}" stroke="green" stroke-width="4" />
 
                     <!-- Center Target Circle -->
-                    <circle cx="{px}" cy="{py}" r="12" fill="#24ff84" stroke="green" stroke-width="4" opacity="0.5" />
+                    <circle cx="{px}" cy="{py}" r="16" fill="#24ff84" stroke="green" stroke-width="4" opacity="0.3" />
                         
                     <!-- Center Target Circle -->
-                    <circle cx="{px}" cy="{py}" r="24" fill="#24ff83" stroke="green" stroke-width="4" opacity="0.3" />
+                    <circle cx="{px}" cy="{py}" r="24" fill="#24ff83" stroke="green" stroke-width="4" opacity="0.2" />
                 '''
 
                 # ── debounced control-change render ───────────────────────────
