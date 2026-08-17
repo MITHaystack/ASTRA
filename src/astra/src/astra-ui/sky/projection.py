@@ -107,6 +107,41 @@ def angular_sep(az1: float, alt1: float, az2: float, alt2: float) -> float:
     return math.degrees(math.acos(max(-1.0, min(1.0, cos_c))))
 
 
+def _pixel_to_altaz(px: float, py: float, res: int, scale:float) -> tuple[float, float]:
+    """Image pixel → (az_deg, alt_deg).  North is up (−y direction)."""
+    R_h = res / 2.0 * scale # horizon radius
+    cx = cy = res / 2.0 # map center
+    dx =  px - cx
+    dy = -(py - cy)          # flip: image y increases downward
+    r   = math.sqrt(dx * dx + dy * dy)
+    alt = 90.0 * (1.0 - r / R_h)   # r=0→90°, r=res/2→0°, r=res→−90°
+
+    if alt < 0:
+        alt = 0.0
+
+    # West = 90, North = 0
+    az  = (math.degrees(math.atan2(dx, dy))) 
+    az =  az % 360.
+    
+    return az, alt
+
+
+def _altaz_to_vec(az_deg: float, alt_deg: float) -> tuple[float, float, float]:
+    """Az/Alt → unit vector (THREE.js: Y=up, N=+Z, E=+X)."""
+    az  = math.radians(az_deg)
+    alt = math.radians(alt_deg)
+    return (
+        math.cos(alt) * math.sin(az),
+        math.sin(alt),
+        math.cos(alt) * math.cos(az),
+    )
+
+
+def _altaz_to_sphere(az_deg: float, alt_deg: float) -> tuple[float, float, float]:
+    x, y, z = _altaz_to_vec(az_deg, alt_deg)
+    return x * _R, y * _R, z * _R
+
+
 # ── formatting helpers (also used by commander) ───────────────────────────────
 
 def format_ra(ra_deg: float) -> str:

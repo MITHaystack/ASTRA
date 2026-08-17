@@ -27,7 +27,7 @@ from fastapi.responses import Response as HTTPResponse
 from nicegui import app, ui
 
 from .. theme import frame
-from .. state import astra_state, astra_sub, astra_cmd, motion_history
+from .. state import astra_state, astra_sub, astra_cmd
 from astradata.objects import *
 
 from .. sky.renderer import SkyConfig, FullSkyRenderer
@@ -39,7 +39,7 @@ from .. sky.projection import format_ra, format_dec
 _STATIC_DIR  = str(Path(__file__).parent.parent / "static" / "sky")
 _sky_cfg     = SkyConfig()
 _renderer    = FullSkyRenderer(_sky_cfg, _STATIC_DIR)
-_catalog_bld = SkyCatalog()
+_catalog = SkyCatalog()
 
 # Shared catalog — rebuilt after each render
 _catalog_state: dict = {
@@ -48,10 +48,6 @@ _catalog_state: dict = {
     "building":      False,
 }
 
-# ── sphere constants ──────────────────────────────────────────────────────────
-_R = 500.0   # sky-dome sphere radius (THREE.js units)
-_CAM_NEAR   = 0.1
-_CAM_FAR    = 1000.0
 
 # ── coordinate helpers ────────────────────────────────────────────────────────
 
@@ -69,52 +65,58 @@ def _deg_to_hms(degrees):
     
     return hours, minutes, seconds
 
-def _altaz_to_vec(az_deg: float, alt_deg: float) -> tuple[float, float, float]:
-    """Az/Alt → unit vector (THREE.js: Y=up, N=+Z, E=+X)."""
-    az  = math.radians(az_deg)
-    alt = math.radians(alt_deg)
-    return (
-        math.cos(alt) * math.sin(az),
-        math.sin(alt),
-        math.cos(alt) * math.cos(az),
-    )
-
-
-def _altaz_to_sphere(az_deg: float, alt_deg: float) -> tuple[float, float, float]:
-    x, y, z = _altaz_to_vec(az_deg, alt_deg)
-    return x * _R, y * _R, z * _R
-
 # ── projection helpers ────────────────────────────────────────────────────────
 # Azimuthal equidistant, zenith-centred.
 # Works in the same pixel space as ui.interactive_image event coordinates
 # (i.e. the natural pixel resolution of the rendered PNG).
 
-def _pixel_to_altaz(px: float, py: float, res: int) -> tuple[float, float]:
-    """Image pixel → (az_deg, alt_deg).  North is up (−y direction)."""
-    cx = cy = res / 2.0
-    dx =  px - cx
-    dy = -(py - cy)          # flip: image y increases downward
-    r   = math.sqrt(dx * dx + dy * dy)
-    alt = 90.0 - r * 180.0 / res   # r=0→90°, r=res/2→0°, r=res→−90°
-    az  = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
-    return az, alt
+def _altaz_to_norm_pixel(az_d, alt_d, cx=0.5, cy=0.5, mxr=0.45):
 
+        az_r = np.deg2rad(az_d)
+        alt_r = np.deg2rad(alt_d)
 
-def _altaz_to_pixel(az: float, alt: float, res: int) -> tuple[float, float]:
-    """(az_deg, alt_deg) → image pixel.  Inverse of _pixel_to_altaz."""
-    cx = cy = res / 2.0
-    r      = (90.0 - alt) * res / 180.0
-    az_rad = math.radians(az)
-    px     = cx + r * math.sin(az_rad)
-    py     = cy - r * math.cos(az_rad)
-    return px, py
+        zd = (np.pi / 2.0) - alt_r
+
+        if zd > (np.pi / 2.0):
+            return None, None
+
+        r = mxr * np.tan(zd / 2.0)
+        x = cx + r * np.sin(az_r)
+        y = cy - r * np.cos(az_r)
+
+        return 1.0-x, y
+
+def _altaz_to_pixel(az: float, alt: float, res: int, scale:float) -> tuple[float, float]:
+
+    px, py = _altaz_to_norm_pixel(az, alt)
+
+    px *= res * scale
+    py *= res * scale
+
+    # """(az_deg, alt_deg) → image pixel.  Inverse of _pixel_to_altaz."""
+    # R_h = res * scale * 0.45 # horizon radius
+    # cx = cy = res / 2.0
+    # r = R_h * (90.0 - alt) / 90.0
+    # # 0 = North / up , 90 deg = West / right
+    # az_rad = math.radians(90.0 - az)
+    # px     = cx + r * math.cos(az_rad)
+    # py     = cy - r * math.sin(az_rad)
+    return round(px), round(py)
 
 
 # ── SVG cursor overlay ────────────────────────────────────────────────────────
 
-def _selection_svg(obj: SkyObject, res: int) -> str:
+def _selection_svg(obj: SkyObject, res: int, scale: float) -> str:
     """Dashed circle + crosshair + text labels at the object's pixel position."""
-    px, py = _altaz_to_pixel(obj.az, obj.alt, res)
+    px, py = obj.px, obj.py
+
+    if px is None or py is None:
+        return
+
+    px = px * res * scale
+    py = py * res * scale
+
+    #print(f"select point is {px} {py}")
 
     r    = max(14.0, res * 0.009)
     gap  = r
@@ -125,7 +127,11 @@ def _selection_svg(obj: SkyObject, res: int) -> str:
     tx   = px + r + res * 0.005
 
     name = obj.name
-    info_parts = [obj.obj_type, f"Az {obj.az:.1f}°", f"Alt {obj.alt:.1f}°"]
+    if obj.az > 180.0:
+        adj_az = obj.az - 360.0
+    else:
+        adj_az = obj.az
+    info_parts = [obj.obj_type, f"Az {adj_az:.1f}°", f"Alt {obj.alt:.1f}°"]
     if obj.magnitude is not None:
         info_parts.append(f"mag {obj.magnitude:.1f}")
     info   = "  ·  ".join(info_parts)
@@ -350,10 +356,9 @@ def create() -> None:
     @ui.page("/")
     def sky_page() -> None:
 
-        ui.add_head_html(
-            '<script src="https://cdnjs.cloudflare.com/ajax/libs'
-            '/three.js/r134/three.min.js"></script>'
-        )
+        # ui.add_head_html(
+        #     '<script src="/static/three.min.js"></script>'
+        # )
 
         # per-session state
         _ui_state = {
@@ -431,7 +436,7 @@ def create() -> None:
                     "border-b border-[#334155] flex-wrap"
                 ):
                     ui.icon("nights_stay").classes("text-indigo-400 text-lg")
-                    ui.label("Zenith Plot").classes(
+                    ui.label("Sky Plot").classes(
                         "text-sm font-semibold text-slate-200"
                     )
                     ui.space()
@@ -461,11 +466,7 @@ def create() -> None:
                     if e.type != "mousedown":
                         return
 
-                    # Convert image pixel → approximate sky coordinates
-                    az, alt = _pixel_to_altaz(
-                        e.image_x, e.image_y, _sky_cfg.resolution
-                    )
-
+                    # check that we have a catalog
                     objects = _catalog_state["objects"]
                     if not objects:
                         if e.button == 0:
@@ -475,12 +476,14 @@ def create() -> None:
                             )
                         return
 
-                    # Angular tolerance: wider for lower-resolution images
-                    tol = max(4.0, (360.0 / _sky_cfg.resolution) * 10)
-                    obj = SkyCatalog.find_nearest_altaz(
-                        az, alt, objects, max_sep_deg=tol
-                    )
+                    # Select nearest object in pixel space 
+                    #print(f"fno call : {e.image_x} {e.image_y} {_sky_cfg.resolution} {_sky_cfg.scale}")
+                    obj = _catalog.find_nearest_object(e.image_x,e.image_y,_sky_cfg.resolution,_sky_cfg.scale)
 
+                    spx = (e.image_x / _sky_cfg.scale) / _sky_cfg.resolution
+                    spy = (e.image_y / _sky_cfg.scale) / _sky_cfg.resolution
+
+                    #print(f"image point is {e.image_x} {e.image_y} {spx} {spy} object point is {obj.px} {obj.py}")
                     if e.button == 0:       # left-click: select / deselect
                         if obj:
                             _select(obj)
@@ -510,7 +513,7 @@ def create() -> None:
 
                 ## add pointing layer
                 pointing_layer = sky_img.add_layer()
-                px,py = _altaz_to_pixel(0.0,0.0, _sky_cfg.resolution)
+                px,py = _altaz_to_pixel(0.0,0.0, _sky_cfg.resolution, _sky_cfg.scale)
                 pointing_layer.content = f'<circle cx="{px}" cy="{py}" r="10" fill="green" opacity="0.5" />'
 
 
@@ -680,7 +683,7 @@ def create() -> None:
                                 4800: "4800 px  (high)",
                             }
                             if _sky_cfg.resolution not in _RES_OPTS:
-                                _sky_cfg.resolution = 3600
+                                _sky_cfg.resolution = 1800
                             res_sel = ui.select(
                                 _RES_OPTS,
                                 value=_sky_cfg.resolution,
@@ -776,13 +779,17 @@ def create() -> None:
 
             def _select(obj: SkyObject) -> None:
                 _sel["obj"] = obj
-                sky_img.content = _selection_svg(obj, _sky_cfg.resolution)
+                sky_img.content = _selection_svg(obj, _sky_cfg.resolution, _sky_cfg.scale)
                 mag_s = (f"  ·  mag {obj.magnitude:.1f}"
                          if obj.magnitude is not None else "")
                 sel_name.set_text(obj.name)
                 sel_type.set_text(f"{obj.obj_type}{mag_s}")
+                if obj.az > 180.0:
+                    adj_az = obj.az - 360.0
+                else:
+                    adj_az = obj.az
                 sel_detail.set_text(
-                    f"Az {obj.az:.3f}°  ·  Alt {obj.alt:.3f}°  ·  "
+                    f"Az {adj_az:.3f}°  ·  Alt {obj.alt:.3f}°  ·  "
                     f"{format_ra(obj.ra_deg)}   {format_dec(obj.dec_deg)}"
                 )
                 sel_panel.set_visibility(True)
@@ -793,7 +800,7 @@ def create() -> None:
                     obj.obj_type + mag_s
                 )
                 ctx_azel.set_text(
-                    f"Az {obj.az:.3f}°   Alt {obj.alt:.3f}°"
+                    f"Az {adj_az:.3f}°   Alt {obj.alt:.3f}°"
                 )
                 ctx_radec.set_text(
                     f"{format_ra(obj.ra_deg)}   {format_dec(obj.dec_deg)}"
@@ -842,7 +849,7 @@ def create() -> None:
                 b_alt.set_text(f"Alt: {alt:.1f}°")
 
                 # --- update sky image layer to add highlight
-                px,py = _altaz_to_pixel(az, alt, _sky_cfg.resolution)
+                px,py = _altaz_to_pixel(az, alt, _sky_cfg.resolution, _sky_cfg.scale)
                 #pointing_layer.content = f'<circle cx="{px}" cy="{py}" r="25" fill="#ffde34" opacity="0.5" />'
 
                 pointing_layer.content = f'''
@@ -851,9 +858,12 @@ def create() -> None:
                         
                     <!-- Vertical Cross Line -->
                     <line x1="{px}" y1="{py - 25}" x2="{px}" y2="{py + 25}" stroke="green" stroke-width="4" />
+
+                    <!-- Center Target Circle -->
+                    <circle cx="{px}" cy="{py}" r="12" fill="#24ff84" stroke="green" stroke-width="4" opacity="0.5" />
                         
                     <!-- Center Target Circle -->
-                    <circle cx="{px}" cy="{py}" r="20" fill="#deff34" stroke="green" stroke-width="4" opacity="0.5" />
+                    <circle cx="{px}" cy="{py}" r="24" fill="#24ff83" stroke="green" stroke-width="4" opacity="0.3" />
                 '''
 
                 # ── debounced control-change render ───────────────────────────
@@ -861,7 +871,7 @@ def create() -> None:
                         and not _renderer.is_rendering
                         and (now - _ui_state["control_change_t"]) >= _CONTROL_DEBOUNCE):
                     _ui_state["control_due"] = False
-                    _kick_render()
+                    await _kick_render()
 
                 # ── next auto-render countdown ────────────────────────────────
                 if not _renderer.is_rendering:
@@ -905,7 +915,7 @@ def create() -> None:
                     _catalog_state["building"]     = True
                     _catalog_state["render_count"] = _renderer.render_count
                     b_cat.set_text("Catalog: building…")
-                    objects = await _catalog_bld.build(
+                    objects = await _catalog.build(
                         lat                = _sky_cfg.lat,
                         lon                = _sky_cfg.lon,
                         elevation_m        = _sky_cfg.elevation_m,

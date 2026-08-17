@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
+from scipy.spatial import KDTree
+import cartopy.crs as ccrs
 
 _SP_OK       = False
 _Star        = None
@@ -363,6 +365,94 @@ class SkyCatalog:
         obj = SkyCatalog.find_nearest_altaz(az, alt, objects, max_sep_deg=10)
     """
 
+    def __init__(self):
+        self._catalog = None
+        self._gast_h = None
+        self._obj_index = None
+        self._pixel_tree = None
+
+    # --- pixel space mapping'
+    # Note the 0.45 is from the ZenithPlot map scaling
+    def _altaz_to_norm_pixel(self, az_d, alt_d, cx=0.5, cy=0.5, mxr=0.45):
+
+        az_r = np.deg2rad(az_d)
+        alt_r = np.deg2rad(alt_d)
+
+        zd = (np.pi / 2.0) - alt_r
+
+        if zd > (np.pi / 2.0):
+            return None, None
+
+        r = mxr * np.tan(zd / 2.0)
+        x = cx + r * np.sin(az_r)
+        y = cy - r * np.cos(az_r)
+
+        return 1.0-x, y
+
+
+
+    def _radec_to_norm_pixel(self, ra_deg, dec_deg, gast_hours, lat_deg, lon_deg, img_width=1.0, img_height=1.0, max_zenith_deg=90):
+        """
+        Transforms RA/Dec celestial coordinates into flat pixel coordinates 
+        for a Zenith Chart using Cartopy.
+        """
+        #print(f" radec2np : {ra_deg} {dec_deg} {gast_hours} {lat_deg} {lon_deg}")
+
+        # 1. Calculate Local Sidereal Time (LST) in degrees
+        gast_deg = gast_hours * 15.0
+        lst_deg = (gast_deg + lon_deg) % 360.0
+
+        raw_lon = ra_deg - gast_deg
+        adj_lon = ((raw_lon + 180) % 360) - 180
+
+        # 2. Map Celestial Sphere coordinates to Earth-like Geography (PlateCarree equivalents)
+        # Right Ascension increases Eastward, Local Hour Angle maps RA onto Longitude.
+        # LHA = LST - RA. To align with a standard zenith map:
+        star_lon = adj_lon
+        star_lat = dec_deg
+
+        #print(f". radec2np : {star_lon} {star_lat}")
+
+        # 3. Define the source coordinate frame (Geodetic / Unprojected Sky)
+        source_crs = ccrs.Geodetic()
+
+        # 4. Define the Zenith Plot Projection centered exactly on the Observer's Zenith
+        # Zenith Map centers: Longitude = LST, Latitude = Observer's Latitude
+        target_crs = ccrs.Stereographic(
+            central_longitude=lst_deg, 
+            central_latitude=lat_deg
+        )
+
+        # 5. Transform celestial position into native projection space (planar meters)
+        projected_point = target_crs.transform_point(star_lon, star_lat, source_crs)
+        x_meters, y_meters = projected_point[0], projected_point[1]
+
+        # Handle points behind the horizon / out of structural projection boundaries
+        if np.isnan(x_meters) or np.isnan(y_meters):
+            return None  # Point is outside projection visibility
+
+        #print(f". radec2np : {x_meters} {y_meters}")
+
+        # 6. Calculate Planar Bounding Limits in Meters based on max zenith degree cutoff
+        # 1 degree roughly equals 111,319.49 meters on a spherical model
+        meters_per_degree = 6371007.2 * np.pi / 180.0 
+        max_radius_meters = max_zenith_deg * meters_per_degree
+
+        # 7. Map planar meters linearly to the designated Pixel Grid dimensions
+        # Assuming center of image (width/2, height/2) corresponds to (0,0) meters
+        pixel_x = (img_width / 2.0) + (x_meters / max_radius_meters) * (img_width / 2.0)
+        
+        # Invert Y-axis because pixel screens count (0,0) from the top-left corner
+        pixel_y = (img_height / 2.0) - (y_meters / max_radius_meters) * (img_height / 2.0)
+
+        #print(f". radec2np : {pixel_x, pixel_y}")
+
+        # Optional: Filter out stars outside the valid canvas frame boundary
+        if 0 <= pixel_x <= img_width and 0 <= pixel_y <= img_height:
+            return pixel_x, pixel_y
+        
+        return None
+
     # ── async entry point ─────────────────────────────────────────────────────
 
     async def build(
@@ -405,6 +495,7 @@ class SkyCatalog:
             dt = dt.replace(tzinfo=timezone.utc)
 
         gast_h = _gast(dt)
+        self._gast_h = gast_h
         objects: list[SkyObject] = []
 
         # 1 — Built-in DSOs (always included)
@@ -425,7 +516,35 @@ class SkyCatalog:
         #    )
 
         # Filter to objects above the horizon
-        return [o for o in objects if o.alt > -5.0]
+        self._catalog = [o for o in objects if o.alt > -5.0]
+
+        # compute pixel location for ZenithPlot via forward mapping in normalized pixel space
+        self._obj_index = []
+        pixel_list = np.empty((0,2))
+
+        for obj in self._catalog:
+            try:
+                #xpix,ypix = self._radec_to_norm_pixel(obj.ra_deg, obj.dec_deg, self._gast_h, lat, lon)
+                xpix,ypix = self._altaz_to_norm_pixel(obj.az, obj.alt)
+            except:
+                #print(f"problem radec to pixel for object {obj}")
+                continue
+            #print(f"object {obj.name} maps to {xpix},{ypix}")
+            if xpix is None or ypix is None:
+                continue
+
+            # fill in the pixel value for the object
+            obj.px = xpix
+            obj.py = ypix
+
+            pair = np.array([xpix, ypix])
+            pixel_list = np.vstack([pixel_list,pair])
+            self._obj_index.append(obj)
+
+        # store as a KD-tree for fast lookup
+        self._pixel_tree = KDTree(pixel_list)
+
+        return self._catalog
 
     # ── source loaders ────────────────────────────────────────────────────────
 
@@ -487,6 +606,8 @@ class SkyCatalog:
                 # Pre-filter to above horizon for speed
                 if alt < -1.0:
                     continue
+
+                # create entry
                 disp_name = _star_display_name(s)
                 hip       = getattr(s, "hip", None)
                 cat_id    = f"HIP {hip}" if hip else disp_name
@@ -559,6 +680,26 @@ class SkyCatalog:
             return []
 
     # ── nearest-object query ──────────────────────────────────────────────────
+
+    def find_nearest_object(self, pix_x, pix_y, res_val, scale_val):
+        if self._pixel_tree is None or self._obj_index is None:
+            return None
+
+        # convert to normalized pixel space
+        npix_x = (pix_x / scale_val) / (res_val)
+        npix_y = (pix_y / scale_val) / (res_val)
+
+        search_pixel = np.array([npix_x, npix_y])
+        #print(f"search pixel is {pix_x},{pix_y} as {npix_x} {npix_y}")
+
+        distance, index = self._pixel_tree.query(search_pixel)
+        
+        nobj = self._obj_index[index]
+
+        #print(f"nobj is {nobj.name}")
+
+        return nobj
+        
 
     @staticmethod
     def find_nearest_altaz(

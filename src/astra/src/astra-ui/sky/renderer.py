@@ -42,12 +42,20 @@ import numpy as np
 from skyfield import api
 from skyfield.constants import tau
 
+
+# ── starplot ──────────────────────────────────────────────────────────────────
+_SP_OK       = True
+
+import starplot
+from starplot import MapPlot, HorizonPlot, ZenithPlot, Orthographic, Miller, Observer, _   # type: ignore
+from starplot.styles import PlotStyle, extensions   # type: ignore
+
+
 ## -- visibility helper
 
 
 def _calculate_lst(dt: datetime, lon_deg: float) -> float:
     """Computes Local Sidereal Time (in hours, 0-24) given a UTC datetime
-
     and longitude in degrees (positive East, negative West).
     """
     # 1. Calculate Julian Date (JD) for the given UTC datetime
@@ -107,13 +115,6 @@ def _visible_sky(lat, lon, dt_utc=None):
     
     return lst_hours, dec_min, dec_max
 
-
-# ── starplot ──────────────────────────────────────────────────────────────────
-_SP_OK       = True
-
-import starplot
-from starplot import MapPlot, HorizonPlot, ZenithPlot, Orthographic, Miller, Observer, _   # type: ignore
-from starplot.styles import PlotStyle, extensions   # type: ignore
 
 @dataclass
 class SkyConfig:
@@ -240,48 +241,23 @@ class FullSkyRenderer:
 
         # ── find the ZENITH projection ─────────────────────────────────
         
-        print(f"[sky] rendering sky plot"
-              f"res={cfg.resolution}  mag≤{cfg.limiting_magnitude}")
+        #print(f"[sky] rendering sky plot"
+        #      f"res={cfg.resolution}  mag≤{cfg.limiting_magnitude}")
         dtn = datetime.now(UTC)
         obs = Observer(dt = dtn, lat=cfg.lat, lon = cfg.lon)
         lst, dec_min, dec_max = _visible_sky(cfg.lat, cfg.lon, dtn)
         ra_min = max(0.0, lst - 6.0)
         ra_max = min(24.0,lst + 6.0)
 
-        print("project fov ", lst, ra_min, ra_max, dec_min, dec_max)
+        #print("sky fov ", lst, ra_min, ra_max, dec_min, dec_max)
         
-        # p = MapPlot(
-        #     projection=Miller(),
-        #     ra_min = ra_min,
-        #     ra_max = ra_max,
-        #     dec_min = dec_min,
-        #     dec_max = dec_max,
-        #     style=style,
-        #     limiting_magnitude = cfg.limiting_magnitude,
-        #     resolution = cfg.resolution,
-        #     autoscale = True
-        # )
-        # p = ZenithPlot(
-        #     observer=obs,
-        #     style=style,
-        #     limiting_magnitude = cfg.limiting_magnitude,
-        #     resolution = cfg.resolution,
-        #     scale = cfg.scale,
-        #     autoscale = True
-        # )
-
-        # ── constructor: probe kwargs progressively ───────────────────────────
-        p = MapPlot(
-            projection         = Miller(),
-            lat                = cfg.lat,
-            lon                = cfg.lon,
-            dt                 = dtn,
-            dec_min            = dec_min,
-            dec_max            = dec_max,
-            style              = style,
+        p = ZenithPlot(
+            observer=obs,
+            style=style,
             limiting_magnitude = cfg.limiting_magnitude,
-            resolution         = cfg.resolution,
-            autoscale          = True, 
+            resolution = cfg.resolution,
+            scale = cfg.scale,
+            autoscale = True
         )
 
         # ── layers ────────────────────────────────────────────────────────────

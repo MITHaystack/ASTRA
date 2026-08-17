@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 from nicegui import ui
 
 from .. theme import frame
-from .. state import astra_state, astra_sub, astra_cmd, motion_history
+from .. state import astra_state, astra_sub, astra_cmd
 from astradata.objects import *
 
 
@@ -879,11 +879,17 @@ def create() -> None:
 
                 mstat_az = "MOVING" if az_mode.moving else "STOP"
                 mstat_alt = "MOVING" if alt_mode.moving else "STOP"
+                if pobj.pointing_az > -360.0 and pobj.pointing_az < 360.0:                    
+                    pos_labels["az"].set_text(f"{pobj.pointing_az:.2f}")
 
-                pos_labels["az"].set_text(f"{pobj.pointing_az:.2f}")
-                pos_labels["alt"].set_text(f"{pobj.pointing_alt:.2f}")
-                pos_labels["az_rate"].set_text(f"{robj.az_rate:.1f}")
-                pos_labels["alt_rate"].set_text(f"{robj.alt_rate:.1f}")
+                if pobj.pointing_alt > -20.0 and pobj.pointing_alt < 180.0:
+                    pos_labels["alt"].set_text(f"{pobj.pointing_alt:.2f}")
+
+                if robj.az_rate >= 0.0 and robj.az_rate < 6.0:
+                    pos_labels["az_rate"].set_text(f"{robj.az_rate:.1f}")
+
+                if robj.alt_rate >= 0.0 and robj.alt_rate < 6.0:
+                    pos_labels["alt_rate"].set_text(f"{robj.alt_rate:.1f}")
 
                 status_lbl.set_text(f"    AZ: {mstat_az} ALT: {mstat_alt}")
 
