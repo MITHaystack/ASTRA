@@ -1,3 +1,5 @@
+# Solar Imaging Using ASTRA
+
 ## Safety
 While the sun is by far the easiest and brightest object to point at, and also one of the only ones able to be seen during the day, it is also not without risk. Looking at the sun without proper filtering can and will cause eye damage. Pointing a camera at the sun without proper filtering can also harm the camera. Before pointing your ASTRA unit close to the sun, make sure that it has a good solar filter on the optical telescope. This can be attached with painter's tape for easy removal. 
 
