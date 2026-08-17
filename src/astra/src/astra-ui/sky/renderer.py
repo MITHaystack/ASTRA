@@ -136,7 +136,6 @@ class SkyConfig:
     show_nebula:               bool = False
     show_open_clusters:        bool = False
     show_altaz_grid:           bool = True
-    show_radec_grid:           bool = False
 
     # Limiting magnitude for the full-sky map
     limiting_magnitude: float = 3.5
@@ -277,7 +276,7 @@ class FullSkyRenderer:
             p.open_clusters(where=[_.magnitude < cfg.limiting_magnitude])
             
         if cfg.show_nebula:
-            p.nebula(where=[_.magtitude < cfg.limiting_magnitude])
+            p.nebula(where=[_.magnitude < cfg.limiting_magnitude])
  
         if cfg.show_constellation_lines:
             p.constellations()
@@ -288,9 +287,6 @@ class FullSkyRenderer:
 
         if cfg.show_altaz_grid:
             p.gridlines()
-
-        if cfg.show_radec_grid:
-            p.radec_gridlines()
 
         _export_plot(p, self.output_path)
 

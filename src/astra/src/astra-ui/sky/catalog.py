@@ -20,10 +20,12 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
+import traceback
 
 import numpy as np
 from scipy.spatial import KDTree
 import cartopy.crs as ccrs
+import skyfield.api
 
 _SP_OK       = False
 _Star        = None
@@ -371,6 +373,9 @@ class SkyCatalog:
         self._obj_index = None
         self._pixel_tree = None
 
+        self._planets = skyfield.api.load('de421.bsp')
+
+
     # --- pixel space mapping'
     # Note the 0.45 is from the ZenithPlot map scaling
     def _altaz_to_norm_pixel(self, az_d, alt_d, cx=0.5, cy=0.5, mxr=0.45):
@@ -510,10 +515,15 @@ class SkyCatalog:
             )
 
         # 3 — Starplot DSOs from OPEN_NGC
-        #if _SP_OK and _DSO is not None and _OPEN_NGC is not None:
-        #    objects.extend(
-        #        self._starplot_dsos(lat, lon, gast_h, limiting_magnitude)
-        #    )
+        # if _SP_OK and _DSO is not None and _OPEN_NGC is not None:
+        #     objects.extend(
+        #         self._starplot_dsos(lat, lon, gast_h, limiting_magnitude)
+        #     )
+
+        # 4 - Planets for current datetime
+        objects.extend(
+            self._starplot_planets(lat, lon, gast_h, limiting_magnitude)
+        )
 
         # Filter to objects above the horizon
         self._catalog = [o for o in objects if o.alt > -5.0]
@@ -572,6 +582,45 @@ class SkyCatalog:
                 catalog_id = name,
             ))
         return result
+
+    def _starplot_planets(self, lat, lon, gast_h, limiting_magnitude):
+
+        result: list[SkyObject] = []
+        try:
+            ts = skyfield.api.load.timescale()
+            t = ts.now()
+
+            earth = self._planets['earth']
+            planet_names = ['Sun','Mercury','Venus','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Moon']
+            planet_type = ['sol','planet','planet','planet','planet','planet','planet','planet','planet','moon']
+            planet_mag = [-10.0,1.0,-4.0,-1.0,-2.0,1.0,6.0,8.0,15.0,-10.0]
+
+            planet_list = [self._planets['sun'],self._planets['mercury'],self._planets['venus'],self._planets['mars'],
+                        self._planets['jupiter barycenter'],self._planets['saturn barycenter'],self._planets['uranus barycenter'], # never gets old...
+                        self._planets['neptune barycenter'],self._planets['pluto barycenter'],self._planets['moon']]
+            
+            for idx, p in enumerate(planet_list):
+                astro = earth.at(t).observe(p)
+                ra, dec, dis = astro.radec()
+                ra_d = ra.degrees
+                dec_d = dec.degrees
+                alt, az = _radec_to_altaz(ra_d, dec_d, lat, lon, gast_h)
+                # don't select planets by limiting magnitude
+                result.append(SkyObject(
+                    name       = planet_names[idx],
+                    obj_type   = planet_type[idx],
+                    ra_deg     = ra_d,
+                    dec_deg    = dec_d,
+                    az         = az,
+                    alt        = alt,
+                    magnitude  = planet_mag[idx],
+                    catalog_id = p.target,
+                ))
+        except:
+                traceback.print_exc() 
+
+        return result
+
 
     def _starplot_stars(
         self,
@@ -642,9 +691,7 @@ class SkyCatalog:
             # Query: magnitude <= limit, OR magnitude is None (unknown/extended)
             dsos = _DSO.find(
                 catalog = _OPEN_NGC,
-                where   = [
-                    (_.magnitude <= limiting_magnitude)
-                ],
+                where=[(_.magnitude < limiting_magnitude) | (_.magnitude.isnull())]
             )
             if not dsos:
                 return []

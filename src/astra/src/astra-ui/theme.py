@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from nicegui import ui
-from .links import MARIMO_URL, DOCS_URL, LESSONS_URL, HELP_URL, ABOUT_URL, LICENSE_URL, HAYSTACK_URL
+from .links import MARIMO_URL, STELLARIUM_URL, ASTROMETRY_URL, DOCS_URL, LESSONS_URL, HELP_URL, ABOUT_URL, LICENSE_URL, HAYSTACK_URL
 
 COLORS = {
     "primary":   "#0ea5e9",
@@ -82,6 +82,9 @@ def frame(title: str):
             ui.label("MIT Haystack Observatory").classes(
                 "text-[9px] text-slate-600 text-center tracking-wide leading-tight"
             )
+            ui.label("ASTRA Development - F. Lind and J. Lind (2026)").classes(
+                            "text-[9px] text-slate-600 text-center tracking-wide leading-tight"
+                        )
 
     with ui.column().classes("w-full p-6 gap-6 bg-[#0f172a] min-h-screen"):
         ui.label(title).classes("text-2xl font-semibold text-white")
@@ -154,6 +157,23 @@ def _nav_links() -> None:
         sublabel   = "localhost:2718  ·  interactive Python",
         icon_color = "text-violet-400",
     )
+
+    _external_link(
+            icon_name  = "nights_stay",
+            label      = "Sky Tonight",
+            url        = STELLARIUM_URL,
+            sublabel   = "Online sky information",
+            icon_color = "text-violet-400",
+    )
+
+    _external_link(
+                icon_name  = "camera_alt",
+                label      = "Astrometry",
+                url        = ASTROMETRY_URL,
+                sublabel   = "Online stellar image lookup ",
+                icon_color = "text-violet-400",
+    )
+    
 
     _separator()
 

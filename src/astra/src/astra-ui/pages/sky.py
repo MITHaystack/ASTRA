@@ -436,7 +436,7 @@ def create() -> None:
                     "border-b border-[#334155] flex-wrap"
                 ):
                     ui.icon("nights_stay").classes("text-indigo-400 text-lg")
-                    ui.label("Sky Plot").classes(
+                    ui.label("Star Plot").classes(
                         "text-sm font-semibold text-slate-200"
                     )
                     ui.space()
@@ -705,10 +705,6 @@ def create() -> None:
                             "Alt/Az Grid",
                             value=_sky_cfg.show_altaz_grid,
                         ).props("dark color=indigo dense")
-                        chk_radec      = ui.checkbox(
-                            "RA/Dec Grid",
-                            value=_sky_cfg.show_radec_grid,
-                        ).props("dark color=indigo dense")
                         chk_mw         = ui.checkbox(
                             "Milky Way",
                             value=_sky_cfg.show_milky_way,
@@ -749,7 +745,6 @@ def create() -> None:
                 _sky_cfg.show_constellation_lines  = bool(chk_con_lines.value)
                 _sky_cfg.show_constellation_labels = bool(chk_con_labels.value)
                 _sky_cfg.show_altaz_grid           = bool(chk_altaz.value)
-                _sky_cfg.show_radec_grid           = bool(chk_radec.value)
                 _sky_cfg.show_milky_way            = bool(chk_mw.value)
                 _sky_cfg.show_nebula               = bool(chk_nebula.value)
                 _sky_cfg.show_open_clusters        = bool(chk_clusters.value)
@@ -772,7 +767,7 @@ def create() -> None:
             mag_sld.on("change", _on_control_change)
             res_sel.on_value_change(_on_control_change)
             for cb in [chk_con_lines, chk_con_labels, chk_altaz,
-                       chk_radec, chk_mw, chk_nebula, chk_clusters]:
+                       chk_mw, chk_nebula, chk_clusters]:
                 cb.on_value_change(_on_control_change)
 
             # ── selection helpers ─────────────────────────────────────────────
@@ -863,7 +858,7 @@ def create() -> None:
                     <circle cx="{px}" cy="{py}" r="16" fill="#24ff84" stroke="green" stroke-width="4" opacity="0.3" />
                         
                     <!-- Center Target Circle -->
-                    <circle cx="{px}" cy="{py}" r="24" fill="#24ff83" stroke="green" stroke-width="4" opacity="0.2" />
+                    <circle cx="{px}" cy="{py}" r="24" stroke="green" stroke-width="4" opacity="0.2" />
                 '''
 
                 # ── debounced control-change render ───────────────────────────
