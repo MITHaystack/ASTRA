@@ -15,9 +15,10 @@ Ensure that a solar filter is on the optical telescope. To prevent the filter fr
 Look up the coordinates of the sun for your location and time in altitude and azimuth. If the azimuth angle is greater than 185 degrees, subtract 360 from the angle and use the resulting angle in, which will be negative. Plug these into their respective fields in the Goto Commands section and press the "GOTO ALTAZ" button.
 ![img](<img/goto_box.png>)
 
-ASTRA will now slew to point near to the sun. The sun will likely not be in the field of view. To get the sun into the field of view, go to the Camera page of the GUI and press the "CONNECT" button, then the "MOVIE" button, then go to the Control page of the GUI, and move the telescope in small increments in a grid. After each movement check to see if the camera frame has any light in the Camera page of the GUI. Once the frame has light, goose the telescope towards the direction that the light is. Beware that directions may be inverted relative to the image.
+ASTRA will now slew to point near to the sun. The sun will likely not be in the field of view. To get the sun into the field of view, go to the Camera page of the GUI and press the "CONNECT" button, then the "MOVIE" button, then go to the Control page of the GUI, and move the telescope in small increments in a grid using the Goto menu. After each movement check to see if the camera frame has any light in the Camera page of the GUI. It is helpful to have multiple monitors or devices for this step. Once the frame has light, goose the telescope towards the direction that the light is. Beware that directions may be inverted relative to the image.
 
 ![img](img/sun_almost_in_frame.jpg)
+![img](<img/goose_menu.png>)
 
 To get an idea of the direction to move when the frame does not have light, look at the shadow of the optical telescope. When it is pointing directly at the sun, light will pass between the telescope and its retaining ring, and this is visible in the shadow. You can also try to center the shadow of the antenna of the radio telescope on the dish.
 ![img](img/imager_shadow.jpg)
@@ -25,3 +26,6 @@ To get an idea of the direction to move when the frame does not have light, look
 ## Focusing on the Sun
 Go to the camera page. The camera is likely already active in video mode from pointing at the sun. Using the fine focus only, change the focus a little bit and see if the image looks sharper or less sharp. It is helpful to have one person looking at the computer and another adjusting the focus. For a reference of what the sun looks like, go to https://spaceweather.com and look for "Daily Sun". The camera is able to pick up sunspots well, and sunspots are a good test for how well the camera is focused.
 ![img](img/sunspots.jpg)
+
+The sun can also be obstructed by clouds or trees. For clouds, wait for them to pass, and for trees, wait until the sun is no longer behind them.
+![img](cloudy_sun.jpg)
