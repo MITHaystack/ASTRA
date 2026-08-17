@@ -15,9 +15,9 @@ ASTROMETRY_URL = "https://nova.astrometry.net/"
 
 # ── GitHub Pages ───────────────────────────────────────────────────────────────
 # Replace the org/repo slug once your Pages site is live.
-_GITHUB_IO_BASE = "https://MITHaystack.github.io/astra"
+_GITHUB_IO_BASE = "https://MITHaystack.github.io/ASTRA"
 
-DOCS_URL    = f"{_GITHUB_IO_BASE}/docs"
+DOCS_URL    = f"{_GITHUB_IO_BASE}"
 LESSONS_URL = f"{_GITHUB_IO_BASE}/lessons"
 HELP_URL    = f"{_GITHUB_IO_BASE}/help"
 ABOUT_URL   = f"{_GITHUB_IO_BASE}/about"
