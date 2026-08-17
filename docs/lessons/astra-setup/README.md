@@ -4,22 +4,27 @@
 ASTRA can be broken down into several different units. They are:
 ### - Antenna Interface (AI) and dish
 ![img](img/ai_dish.jpg)
+
 In the AI, there is a GPS, IMU, bias tee, noise diode and rp2040 controller. The GPS provides location and time data. The IMU provides orientation and magnetic field data. the bias tee provides power to the antenna. The noise diode connects to the smaller antenna inside the dish, and when activated sends out noise to calibrate the antenna and to test to see if the antenna can see the outside world. THe rp2040 controls all of these except for the bias tee, which is always on. The dish focuses the light to the feed, allowing for the light to be converted into electricity.
 
 ### - Tripod and mount
 ![img](img/tripod.jpg)
+
 The mount allows for automated movement of the telescopes.
 
 ### - Optical telescope, counterweight, and CCD
 ![img](img/ccd.jpg)
-THe optical telescope focuses light, magnifying the sky. The counterweight balances the load on the mount, reducing motor strain and risk of tipping. The CCD is effectively a camera without a lens.
+
+The optical telescope focuses light, magnifying the sky. The counterweight balances the load on the mount, reducing motor strain and risk of tipping. The CCD is effectively a camera without a lens.
 
 ### - Energy Box
 ![img](img/energy_box.jpg)
+
 The energy box contains a battery, software defined radio, wifi antenna, and main computer. THe battery provides power to the entire unit. The software defined radio takes the analog signal from the antenna and converts it into digital signal. The wifi antenna broadcasts a wifi network.
 ### - Base
 ![img](img/base.jpg)
-Allows for moving of the entire unit, and has adjustable feet for ease of leveling. 
+
+The base allows for moving of the entire unit, and has adjustable feet for ease of leveling. 
 
 
 ## Setup:
