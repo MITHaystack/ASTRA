@@ -36,7 +36,7 @@ def main() -> None:
 
     ui.run(
         title  = "ASTRA",
-        port   = 80,
+        port   = 8080,
         dark   = True,
         show   = False,
         reload = True,
