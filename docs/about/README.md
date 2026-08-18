@@ -1,5 +1,11 @@
 ## About ASTRA
 
+ASTRA occurred because of Joe Lind's Eagle Scout project needing to meet the requests and needs of
+the potential users in his High School science program. We didn't have quite the right thing so we set
+out to create it. 
+
+_To help other people at all times_
+
 # ASTRA History
 
 ASTRA derives from earlier work on the Small Radio Telescope (SRT) and Very Small Radio Telescope (VSRT).
@@ -21,19 +27,27 @@ spanned more than a year.
 ## Acknowledgements
 
 We would like to acknowledge all those who have donated funds and time to support the development ASTRA. This includes
-generous support for the donation of the second prototype unit to the GDRHS. Dr. Frank Lind also put in endless hours
-on nights and weekends developing the software for the system. 
+generous support for the donation of the second prototype unit to the GDRHS. 
+
+Dr. Frank Lind also put in endless hours on nights and weekends developing the software for the system. 
 
 _Labor omnia vincit_
 
-Joe earned his stripes as an astronomer, testing in the 
-middle of winter and well below zero, and the heat of summer with heat, humidity, and a lack of shade. 
+Joe Lind also earned his stripes as an astronomer, testing in the middle of winter and well below zero, 
+and the heat of summer with heat, humidity, and a lack of shade. 
 
 _Sic itur ad astra_
 
 # ASTRA Open Source Usage and Contributions
 
 ASTRA leverages a number of other commercial and open source projects. 
+
+- [Python]() We have been heavy duty python users since 2001! Read-write Lisp.
+- Assorted python packages such as numpy, scipy, aiomqtt, etc. 
+- [DigitalRF]() Behind the scenes for RF data capture. Our own one here.
+- [Skyplot]() A really first class python package for starcharts and plotting.
+- [Nicegui]() As claimed, a really well done asyncio framework graphical interface platform.
+- [Marimo]() Python notebooks for on platform manipulation and analysis of data. 
 
 # ASTRA Use of Artificial Intelligence
 
