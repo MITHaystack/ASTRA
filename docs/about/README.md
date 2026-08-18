@@ -1,8 +1,10 @@
 ## About ASTRA
 
 ASTRA occurred because of Joe Lind's Eagle Scout project needing to meet the requests and needs of
-the potential users in his High School science program. We didn't have quite the right thing so we set
-out to create it. 
+the potential users in his High School science program. They wanted a "teaching cart" for astronomy.
+At MIT Haystack Observatory, we didn't have quite the right thing so we set out to create it. 
+
+ASTRA is the result... 
 
 _To help other people at all times_
 
