@@ -8,6 +8,7 @@ data collection, reduction, and analysis.
 ### Introduction
 - [What is ASTRA?](./astra-intro-overview/README.md)
 - [ASTRA Setup and Transport](./astra-setup/README.md)
+- [User Interface Overview](./astra-ui/README.md)
 - [Observing Stars with ASTRA](./astra-basic-imaging/README.md)
 - [Observing the Sun with ASTRA](./astra-solar-imaging/README.md)
 - [Hydrogen Line Detection with ASTRA](./astra-basic-hline/README.md)
@@ -31,6 +32,9 @@ data collection, reduction, and analysis.
 - [Spots on the Sun!](./astra-sunspots)
 
 ### Lesson Plans - Intermediate
+- [Astrometry](./astra-astrometry/README.md)
+- [Notebooks](./astra-notebooks/README.md)
 
 
 ### Lesson Plans - Advanced
+- [Image Stacking](./astra-stacking/README.md)
