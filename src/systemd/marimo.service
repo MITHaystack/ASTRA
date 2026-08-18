@@ -1,0 +1,13 @@
+[Unit]
+Description=Marimo Python Notebook
+After=network.target
+
+[Service]
+Type=simple
+User=astra-admin
+WorkingDirectory=/data/notebooks/
+ExecStart=/home/astra-admin/radioconda/bin/marimo edit /data/notebooks/ --host 0.0.0.0 --port 2718 --token-password "astra002"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
