@@ -1,0 +1,16 @@
+[Unit]
+Description=ASTRA Motion Service
+Wants=astra-interface.service
+After=astra-interface.service
+
+[Service]
+Type=simple
+User=astra-admin
+WorkingDirectory=/home/astra-admin/Programs/ASTRA/src/astra
+ExecStart=/home/astra-admin/radioconda/bin/poetry run python astra-motion
+ExecStartPre=/bin/sleep 1
+Restart=always
+Environment="PATH=/home/astra-admin/Programs/ASTRA/src/astra:/home/astra-admin/radioconda/bin/poetry:/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=multi-user.target
