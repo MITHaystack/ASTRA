@@ -7,6 +7,8 @@ Point the unit to true north, accounting for declination from magnetic north. Le
 
 ## Remove the Lens Cover
 
+## Daytime - Install the Solar Filter
+
 ## Focusing the Optical Telescope
 
 ## Finding Objects

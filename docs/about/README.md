@@ -1,3 +1,5 @@
+## About ASTRA
+
 # ASTRA History
 
 ASTRA derives from earlier work on the Small Radio Telescope (SRT) and Very Small Radio Telescope (VSRT).
@@ -18,8 +20,16 @@ spanned more than a year.
 
 ## Acknowledgements
 
-We would like to acknowledge all those who have donated to support the development ASTRA and donation of the second
-prototype unit to the GDRHS. 
+We would like to acknowledge all those who have donated funds and time to support the development ASTRA. This includes
+generous support for the donation of the second prototype unit to the GDRHS. Dr. Frank Lind also put in endless hours
+on nights and weekends developing the software for the system. 
+
+_Labor omnia vincit_
+
+Joe earned his stripes as an astronomer, testing in the 
+middle of winter and well below zero, and the heat of summer with heat, humidity, and a lack of shade. 
+
+_Sic itur ad astra_
 
 # ASTRA Open Source Usage and Contributions
 
@@ -31,4 +41,7 @@ The ASTRA user interface has made use of the Claude Sonnet 4.6 model for initial
 the code base. This coding was guided by the Nice Vibes AI coding agent guidelines for the python NiceGUI
 user interface framework. Other code used in ASTRA has been hand developed. 
 
+### License
 
+This system and software, unless otherwise noted, is licensed under the BSD 3-clause 
+"New" or "Revised" license.
