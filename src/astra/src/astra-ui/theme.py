@@ -174,11 +174,12 @@ def _nav_links() -> None:
     _separator()
 
     _section_label("TOOLS")
-    
+
+    # note this link assumes a proxy server mapping 2719 on the server to 2718 occupied by marimo
     _external_link_button(
         icon_name  = "science",
         label      = "Notebook",
-        url        = "window.open('http://' + window.location.hostname + ':2718/', '_blank');",
+        url        = "window.open('http://' + window.location.hostname + ':2719/', '_blank');",
         sublabel   = "Python notebook",
         icon_color = "text-violet-400",
     )
