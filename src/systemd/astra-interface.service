@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=astra-admin
 WorkingDirectory=/home/astra-admin/Programs/ASTRA/src/astra
-ExecStart=/home/astra-admin/radioconda/bin/poetry run python astra-interface
+ExecStart=/home/astra-admin/radioconda/bin/poetry run astra-interface
 ExecStartPre=/bin/sleep 5
 Restart=always
 Environment="PATH=/home/astra-admin/Programs/ASTRA/src/astra:/home/astra-admin/radioconda/bin/poetry:/usr/local/bin:/usr/bin:/bin"
