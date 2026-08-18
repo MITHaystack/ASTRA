@@ -485,18 +485,18 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                             motion_state = 'standby'
 
                 case 'update-target':
-                    print('implement target update')
+                    #print('implement target update')
                     target = await antenna_state.get('astra-target')
                     motion_update_time = datetime.now(timezone.utc).timestamp()
                     motion_duration = datetime.now(timezone.utc).timestamp() - motion_update_time
 
                     match target.target_type:
                         case 'standby':
-                            print(".. update standby")
+                            #print(".. update standby")
                             send_motion_command = False
                             pass
                         case 'stow':
-                            print(".. update stow")
+                            #print(".. update stow")
                             pointing = await antenna_state.get('astra-pointing') 
 
                             send_motion_command = False
@@ -508,7 +508,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                                 motion_state = 'stop'
 
                         case 'altaz':
-                            print(".. update altaz")
+                            #print(".. update altaz")
                             if _on_target(pointing, motion_target['tgt_az'], motion_target['tgt_alt']):
                                 motion_state = 'on-target'
 
@@ -518,7 +518,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                                 motion_state = 'stop'
 
                         case 'radec':
-                            print(".. update radec")
+                            #print(".. update radec")
                             # We will add tracking into this in a bit... that is why it is separate
 
                             if _on_target(pointing, motion_target['tgt_az'], motion_target['tgt_alt']):
@@ -530,7 +530,7 @@ async def antenna_motion_handler(options, mount, mount_lock, antenna_state, even
                                 motion_state = 'stop'
 
                         case 'slew':
-                            print(".. update slew")
+                            #print(".. update slew")
 
                             send_motion_command = False
 
