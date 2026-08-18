@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=astra-admin
 WorkingDirectory=/data/notebooks/
-ExecStart=/home/astra-admin/radioconda/bin/marimo edit /data/notebooks/ --host 0.0.0.0 --port 2718 --token-password "astra002"
+ExecStart=/home/astra-admin/radioconda/bin/marimo edit /data/notebooks/ --host 0.0.0.0 --port 2718 --base-url /marimo --token-password "astra002"
 Restart=on-failure
 
 [Install]
