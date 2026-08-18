@@ -442,7 +442,7 @@ class AzGTi_Protocol:
     def set_speed(self, axis, deg_per_sec):
         ax = self._match_axis(axis)
         cval = self._deg2counts(abs(deg_per_sec),ax)
-        print(f"cval:{cval}")
+        #print(f"cval:{cval}")
         if abs(cval) < 0:
             crate = int(self.timer_interrupt_freq)
         elif abs(cval) == 0:
@@ -499,7 +499,7 @@ class AzGTi_Protocol:
     """" Set the mode bit mask as bit fields of an integer """
     def _encode_mode(self, track, speed, ccw):
         val = 0x00
-        print("tracking ", track, "speed", speed, "ccw", ccw)
+        #print("tracking ", track, "speed", speed, "ccw", ccw)
         if track:
             val = (val | ModeMask.TG_MASK.value)
             sbit = speed
