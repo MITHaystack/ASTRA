@@ -7,7 +7,7 @@ Type=simple
 User=astra-admin
 WorkingDirectory=/home/astra-admin/Programs/ASTRA/src/astra
 ExecStart=/home/astra-admin/radioconda/bin/poetry run python astra-interface
-ExecStartPre=/bin/sleep 10
+ExecStartPre=/bin/sleep 5
 Restart=always
 Environment="PATH=/home/astra-admin/Programs/ASTRA/src/astra:/home/astra-admin/radioconda/bin/poetry:/usr/local/bin:/usr/bin:/bin"
 
