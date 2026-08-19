@@ -11,12 +11,10 @@ and radio education through real world measurement.
 The system is relatively inexpensive and suitable for use by a science program or astronomy club. ASTRA can be used as an adjunct for lesson plans related to the electromagnetic spectrum, chemistry and physics, and radio and optical astronomy. More advanced 'mini projects' are also possible for small groups of enthusiastic students who are willing to put in more work observing. 
 
 It is possible to build an ASTRA unit from scratch. We have used entirely off the shelf components 
-for the system. Most of them available from online vendors. The antenna is available online but
-appears to be produced in batches. Changes to the system are possible but can produce integration 
-problems. In particular we have found some computers to be very unstable, cameras that generate self
-interference, and a host of low level software integration challenges. We do not expect to directly
-support a wide range of software drivers for the system. The build instructions will include some 
-potential directions for modifying the design. 
+for the system. Most of them available from online vendors. We expect it will take about 100 hours to replicate the system given a reasonable level experience with electronics, 3D printing, and hardware
+integration and testing. Student groups should have an experienced mentor. It is really not an individual project unless a significant amount of time is available.  
+
+Changes to the system are possible but can produce integration  problems. In particular we have found some computers to be very unstable, cameras that generate self interference, and a host of low level software integration challenges. We do not expect to directly support a wide range of software drivers for the system. The build instructions will include some potential directions for modifying the design. 
 
 ## Key Features
 
