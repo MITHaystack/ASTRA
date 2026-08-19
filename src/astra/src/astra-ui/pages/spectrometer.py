@@ -929,4 +929,4 @@ def create() -> None:
 
                         ui.timer(5.0, _do_ts_update)
 
-            ui.timer(0.1, _refresh)
+            ui.timer(0.25, _refresh)
