@@ -1,6 +1,17 @@
 # ASTRA
 The Automated Small Telescope for Radio Astronomy (ASTRA) is a low cost platform for astronomy education.
 
+## Key Features
+
+- 70 cm diameter [Discovery Dish](https://www.crowdsupply.com/krakenrf/discovery-dish) radio antenna
+- Hydrogen Line (1420 MHz) feed and software radio
+- 60mm optical F/4.5 wide field of view optical telescope 
+- 8 Mega Pixel CCD (uncooled) for optical imaging
+- Goto Telescope Mount 
+- Integrated Navigation (GPS), Inertial Measurement (IMU), and Orientation (Magnetometer)
+- Battery Operation (12hr+)
+- Rolling Base / Cart
+
 ## Description
 
 <img align="left" src="docs/about/img/astra-002-photo.jpg" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;"> ASTRA integrates a small radio telescope, an optical wide-field imaging system, a position and orientation sensor, and a GoTo mount. 
@@ -16,16 +27,6 @@ integration and testing. Student groups should have an experienced mentor. It is
 
 Changes to the system are possible but can produce integration  problems. In particular we have found some computers to be very unstable, cameras that generate self interference, and a host of low level software compatibility challenges. We do not expect to directly support a wide range of software drivers for the system. So integrating custom software (e.g. different radios) can take significant development experience. The build instructions include some potential directions for modifying the design. 
 
-## Key Features
-
-- 70 cm diameter [Discovery Dish](https://www.crowdsupply.com/krakenrf/discovery-dish) radio antenna
-- Hydrogen Line (1420 MHz) feed and software radio
-- 60mm optical F/4.5 wide field of view optical telescope 
-- 8 Mega Pixel CCD (uncooled) for optical imaging
-- Goto Telescope Mount 
-- Integrated Navigation (GPS), Inertial Measurement (IMU), and Orientation (Magnetometer)
-- Battery Operation (12hr+)
-- Rolling Base / Cart
 
 ### Example Observations
 
