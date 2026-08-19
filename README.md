@@ -25,7 +25,7 @@ adjunct for lesson plans related to the electromagnetic spectrum, chemistry and 
 
 ### Example Observations
 
-ASTRA can be used to make [radio](docs/lessons/radio-obs.md) and [optical](docs/lessons/optical-obs.md) observations. This includes
+ASTRA can be used to make [radio](docs/observations/radio-obs-example.md) and [optical](docs/observations/optical-obs-example.md) observations. This includes
 radio measurement of the hydrogen line, galactic structure and rotation. Optical imaging of the Sun, Moon, star clusters, and major Nebulae also 
 enables a direct comparison of radio signatures with wide field of view imaging. 
 
