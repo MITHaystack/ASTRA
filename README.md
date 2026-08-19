@@ -14,7 +14,7 @@ It is possible to build an ASTRA unit from scratch. We have used entirely off th
 for the system. Most of them available from online vendors. We expect it will take about 100 hours to replicate the system given a reasonable level experience with electronics, 3D printing, and hardware
 integration and testing. Student groups should have an experienced mentor. It is really not an individual project unless a significant amount of time is available.  
 
-Changes to the system are possible but can produce integration  problems. In particular we have found some computers to be very unstable, cameras that generate self interference, and a host of low level software integration challenges. We do not expect to directly support a wide range of software drivers for the system. The build instructions will include some potential directions for modifying the design. 
+Changes to the system are possible but can produce integration  problems. In particular we have found some computers to be very unstable, cameras that generate self interference, and a host of low level software compatibility challenges. We do not expect to directly support a wide range of software drivers for the system. So integrating custom software (e.g. different radios) can take significant development experience. The build instructions include some potential directions for modifying the design. 
 
 ## Key Features
 
