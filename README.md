@@ -98,4 +98,6 @@ BSD 3-clause "New" or "Revised" license, see the associated license file.
 
 ASTRA leverages both the Discovery Dish, PlutoSDR, DigitalRF, Python, NiceGUI, Marimo and a large range of open source libraries to implement the needed control, user interface, data processing, and hardware systems. These tools are generally installed directly from online repositories by using operating system level installation, Radioconda, or the Poetry project dependency tool. 
 
-The Claude Sonnet 4.6 model was used along with [Nice Vibes](https://github.com/Alyxion/nice-vibes) to help with user interface coding. The resulting interface was highly modified manually for layout, function, and backend integration. 
+### Note on AI Usage
+
+The Claude Sonnet 4.6 model was used along with [Nice Vibes](https://github.com/Alyxion/nice-vibes) to help with user interface coding. The resulting interface was heavily modified by manual coding to adapt and improve layout, function, and backend integration. 
