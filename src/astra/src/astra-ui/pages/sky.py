@@ -677,15 +677,13 @@ def create() -> None:
                             )
                             # Guard against stale resolution value
                             _RES_OPTS = {
-                                1024: "1024 px (fast)",
-                                1200: "1200 px",
-                                1800: "1800 px",
+                                1800: "1800 px (fast)",
                                 2400: "2400 px",
                                 3600: "3600 px  (quality)",
                                 4800: "4800 px  (high)",
                             }
                             if _sky_cfg.resolution not in _RES_OPTS:
-                                _sky_cfg.resolution = 1024
+                                _sky_cfg.resolution = 1800
                             res_sel = ui.select(
                                 _RES_OPTS,
                                 value=_sky_cfg.resolution,
