@@ -4,6 +4,8 @@
 
 Background data pointed at the horizon with only interference lines visible. 
 
+![img](img/astra-background-rf-psd.png)
+
 ### Noise Diode RF
 
 Background data with the integrated noise diode activated. 
