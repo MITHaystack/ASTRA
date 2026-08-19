@@ -141,7 +141,7 @@ class SkyConfig:
     limiting_magnitude: float = 3.5
 
     # Render quality
-    resolution: int = 1800   # pixels of the square output PNG
+    resolution: int = 1024   # pixels of the square output PNG
     scale: float = 1.0 
 
 
