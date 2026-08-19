@@ -1,7 +1,10 @@
 ## ASTRA Example Optical Observations
 
-### Solar Images with Sunspots from the UI (live)
+### Solar Images with Sunspots from the UI (live). 
 
+Taken using a 3D printed solar filter using commercial filter film. 
+
+![Optical Image of Sun](./img/astra-solar-sunspot-2026-08-16.jpg)
 
 ### Stellar Images of from the UI (live)
 
