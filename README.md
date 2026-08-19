@@ -40,7 +40,8 @@ ASTRA can be constructed by a small group using off the shelf components, 3D pri
 
 - [Components](docs/bom/astra-bom.csv)
 - [Assembly](docs/hardware/)
-- [Software Configuration](docs/system/system.md)
+- [Configuration](docs/system/system.md)
+- [User Interface](docs/software/astra-ui/)
 - [Environmental](docs/system/environmental-overview.md)
 
 Although many alternative components exist, the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
@@ -49,7 +50,7 @@ Although many alternative components exist, the overall selections for ASTRA are
 
 ## Lessons
 
-Our lessons are currently under development and will be released after we complete testing them. 
+Our lessons are currently under development and will be released after we complete testing them. Some of the introductory lessons are online as we develop and refine them. 
 
 ### Introduction
 - [What is ASTRA?](docs/lessons/astra-intro-overview)
@@ -85,11 +86,16 @@ Our lessons are currently under development and will be released after we comple
 - [Star Cluster Survey](docs/projects/astra-project-star-clusters)
 - [Imaging Sagitarius A*](docs/projects/astra-project-sagitariusA)
 
+### Building ASTRA (Advanced)
+- [Building ASTRA](docs/projects/astra-building)
+- [Customizing ASTRA](docs/projects/astra-customizing)
+
 ## License
 
 BSD 3-clause "New" or "Revised" license, see the associated license file. 
 
 ## Acknowledgments
 
-ASTRA leverages both the Discovery Dish, GNU Radio, RTL-SDR, Stellarium web, JupyterLab, the Raspberry Pi, Python, and a range of open source libraries
-to implement the needed control, user interface, data processing, and hardware systems. These tools are generally installed directly from online repositories. 
+ASTRA leverages both the Discovery Dish, PlutoSDR, DigitalRF, Python, NiceGUI, Marimo and a large range of open source libraries to implement the needed control, user interface, data processing, and hardware systems. These tools are generally installed directly from online repositories by using operating system level installation, Radioconda, or the Poetry project dependency tool. 
+
+The Claude Sonnet 4.6 model was used along with [Nice Vibes](https://github.com/Alyxion/nice-vibes) to help with user interface coding. The resulting interface was highly modified manually for layout, function, and backend integration. 
