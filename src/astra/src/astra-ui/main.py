@@ -22,7 +22,7 @@ async def _startup() -> None:
     print("[startup] ASTRA initialised")
 
 
-def main() -> None:
+if __name__ in {"__main__", "__mp_main__"}:
     app.add_static_files(
         url_path        = "/static",
         local_directory = str(Path(__file__).parent / "static"),
@@ -43,6 +43,3 @@ def main() -> None:
         favicon= "🔭",
     )
 
-
-if __name__ in {"__main__", "__mp_main__"}:
-    main()
