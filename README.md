@@ -3,7 +3,7 @@ The Automated Small Telescope for Radio Astronomy (ASTRA) is a low cost platform
 
 ## Description
 
-<img src="docs/about/img/astra-002-photo.jpg" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;"> ASTRA integrates a small radio telescope, an optical wide-field imaging system, a position and orientation sensor, and a GoTo mount. 
+<img align="left" src="docs/about/img/astra-002-photo.jpg" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;"> ASTRA integrates a small radio telescope, an optical wide-field imaging system, a position and orientation sensor, and a GoTo mount. 
 An onboard computer enables automation and control of the system. Combined with a browser based interface to student laptops, the 
 platform can be used for collection and visualization of radio and optical astronomy data. This enables active learning for science
 and radio education through real world measurement.  
