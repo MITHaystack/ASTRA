@@ -1,6 +1,6 @@
 # ASTRA
 The Automated Small Telescope for Radio Astronomy (ASTRA) is a low cost platform for astronomy education.
-![img](about/img/astra-002-photo.jpg)
+![img](./about/img/astra-002-photo.jpg)
 
 ## Description
 
