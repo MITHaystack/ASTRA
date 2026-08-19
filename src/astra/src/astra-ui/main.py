@@ -39,7 +39,7 @@ def main():
         port   = 8080,
         dark   = True,
         show   = False,
-        reload = True,
+        reload = False,
         favicon= "🔭",
     )
 
