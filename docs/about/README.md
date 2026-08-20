@@ -2,7 +2,7 @@
 
 ASTRA occurred because of Joe Lind's Eagle Scout project needing to meet the requests and needs of
 the potential users in his High School science program. They wanted a "teaching cart" for astronomy.
-The existing Small Radio Telescope really wasn't suitable for their needs or location. At MIT Haystack Observatory, we didn't have quite the right thing so Joe and his father Dr. Frank Lind set out to create it. 
+The existing Small Radio Telescope really wasn't suitable for their needs or location. At MIT Haystack Observatory, we didn't have quite the right thing so Joe and his father Dr. Frank Lind set out to create a solution and respond to the request. 
 
 ASTRA is the result... 
 
