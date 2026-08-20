@@ -3,7 +3,7 @@
 ## Overivew
 
 <img align="left" src="hardware/img/astra-hardware.png" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;">
-ASTRA is a mobile radio and optical astronomy teaching cart developed as a smaller, less expensive, and more accessible alternative to the traditional Small Radio Telescope (SRT). 
+ASTRA is a mobile radio and optical astronomy teaching cart developed as a smaller, less expensive, and more accessible alternative to the traditional Small Radio Telescope (SRT).
 
 While the original SRT (developed at MIT Haystack Observatory in 1998 by Dr. Alan Rogers) is a powerful tool for observing the 1420 MHz hydrogen emission line, it requires a permanent outdoor installation, is costly to build and install, and required a fair amount of customization. 
 
