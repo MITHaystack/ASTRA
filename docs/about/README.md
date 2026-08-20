@@ -12,13 +12,17 @@ _To help other people at all times_
 
 ASTRA derives from earlier work on the Small Radio Telescope (SRT) and Very Small Radio Telescope (VSRT). These systems were initially developed by Dr. Alan Rogers of MIT Haystack Observatory and documented in his memo series. Many staff members of MIT Haystack Observatory have contributed to these systems and they have been the subject of a number of student projects. 
 
-The specific ASTRA design was developed as part of a Haystack student project by Joe Lind of Groton Dunstable Region High School and Troop 1 West Groton. This project ultimately became a part of an Eagle Scout project by Joe to contribute the second prototype unit to Groton Dunstable Region High School (GDRHS). Early testing and construction of this unit involved contributions from members of Scouting America Troop 1 West Groton. 
+The specific ASTRA design was developed as part of a Haystack student project by Joe Lind of Groton Dunstable Region High School and Troop 1 West Groton. This project ultimately became a part of an Eagle Scout project by Joe to contribute the second prototype unit to Groton Dunstable Region High School (GDRHS). Early testing and construction of this unit involved contributions from members of Scouting America Troop 1 West Groton. Staff members at MIT Haystack Observatory also contributed to 
+the concepts and technologies selected for implementation of ASTRA. These individuals include Ryan
+Volz, John Swoboda, and Rigel Cappallo. 
 
-Dr. Frank Lind developed the first prototype design and software in combination with early testing by Joe Lind. The entire effort was in response to the science teachers of Groton Dunstable High School wanting a smaller and more portable system than an SRT. Hardware integration and system testing was a collaborative effort that spanned more than a year. 
+Dr. Frank Lind developed the first prototype design and software in combination with early testing together and concept exploration with Joe Lind. The entire effort was in response to the science teachers of Groton Dunstable High School wanting a smaller and more portable system than an SRT. Hardware integration and system testing was a collaborative effort that spanned more than a year. The Eagle Scout project to duplicate and donate the system spanned about six months from approval to 
+completion. 
 
 ## Acknowledgements
 
-We would like to acknowledge all those who have donated funds and time to support the development ASTRA. This includes generous support for the donation of the second prototype unit to the GDRHS. Scouts from Troop 1 West Groton also contributed to the system by helping to replicate the prototype unit, assembling components, and helping with testing. 
+We would like to acknowledge all those who have donated funds and time to support the development ASTRA. This includes generous support for the donation of the second prototype unit to the GDRHS. Scouts from Troop 1 West Groton also contributed to the system by helping to replicate the prototype unit, assembling components, and helping with testing. The enthusiasm of Haystack staff members during
+our testing on site was also welcome and very encouraging. 
 
 Dr. Frank Lind also put in endless hours on nights and weekends testing hardware and developing the software for the system. The Lind family also financially supported aspects of the project outside of the Eagle scout project. 
 
