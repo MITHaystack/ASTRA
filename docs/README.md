@@ -1,6 +1,6 @@
 # ASTRA: Automated Small Telescope for Radio Astronomy
 
-## Overivew
+## Overview
 
 <img align="left" src="hardware/img/astra-hardware.png" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;">
 ASTRA is a mobile radio and optical astronomy teaching cart developed as a smaller, less expensive, and more accessible alternative to the original MIT Haystack Observatory Small Radio Telescope (SRT).
