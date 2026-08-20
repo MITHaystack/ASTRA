@@ -2,13 +2,18 @@
 layout: default
 ---
 
-<div style="display: flex-grow: 1; flex-shrink: 1; flex-basis: 0%; gap: 10px; flex-wrap: wrap; margin: 20px 0;">
-  <a href="./" style="background-color: #8CCDD2; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Overview</a>
-  <a href="./lessons/" style="background-color: #5C939B; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Lessons</a>
-  <a href="./projects/" style="background-color: #2C5259; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Projects</a>
-  </div>
-  <div style="display: flex-grow: 1; flex-shrink: 1; flex-basis: 0%; gap: 10px; flex-wrap: wrap; margin: 20px 0;">
-  <a href="./observations/" style="background-color: #918CD2; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Examples</a>
-  <a href="./makers/" style="background-color: #635CB8; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Makers</a>
-  <a href="./help/" style="background-color: #3B357A; color: white; padding: 36px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-family: sans-serif; display: inline-block;">Help</a>
+<div style="display: flex; flex-wrap: wrap; gap: 10px; width: 300px;">
+
+<a href="./README.md" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #8CCDD2; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Overview/a>
+
+<a href="./lessons/" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #5C939B; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Lessons/a>
+
+<a href="./projects/" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #2C5259; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Projects/a>
+
+<a href="./observations/" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #8CCDD2; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Examples/a>
+
+<a href="./makers/" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #8CCDD2; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Makers/a>
+
+<a href="./help/" style="display: flex; align-items: center; justify-content: center; width: 90px; height: 40px; background-color: #8CCDD2; color: white; text-decoration: none; font-family: sans-serif; font-size: 14px; border-radius: 4px; box-sizing: border-box;">Help Me!/a>
+
 </div>
