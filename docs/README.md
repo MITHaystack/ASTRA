@@ -7,7 +7,7 @@ While the original SRT (developed at MIT Haystack Observatory in 1998 by Dr. Ala
 
 ASTRA makes different choices to address some of these limitations. In particular, ASTRA provides a moveable, battery-powered, hybrid (radio and optical) telescope using off the shelf components. ASTRA is relatively inexpensive, easily fits through doorways, and can be used directly in classrooms or operated remotely via WiFi by individuals or small teams using a web based interface.
 
-![ASTRA Hardware Overview](hardware/img/astra-hardware.png)
+<img align="left" src="hardware/img/astra-hardware.png" alt="ASTRA photo" style="float: left; margin-right: 15px; width: 150px; height: auto;">
 
 ## About
 - [ASTRA Components](./about/astra.md)
