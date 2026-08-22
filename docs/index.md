@@ -2,7 +2,7 @@
 layout: default
 ---
 
-<div style="display: flex; flex-wrap: wrap; gap: 10px; width: 1000px;">
+<div style="display: flex; flex-wrap: wrap; gap: 10px; width: 750px;">
 
 <a href="./overview/" style="display: flex; align-items: center; justify-content: center; width: calc((100% - 20px) / 3); height: calc((100% - 20px) / 3 / 1.618); background-color: #8CCDD2; color: white; text-decoration: none; font-family: sans-serif; font-size: 24px; border-radius: 4px; box-sizing: border-box;">Overview</a>
 
