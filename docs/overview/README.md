@@ -11,35 +11,35 @@ ASTRA makes different choices to address some of these limitations. In particula
 
 
 ## About
-- [ASTRA Components](./about/astra.md)
-- [About ASTRA](./about/README.md)
-- [License](./about/LICENSE.md)
+- [ASTRA Components](../about/astra.md)
+- [About ASTRA](../about/README.md)
+- [License](../about/LICENSE.md)
 
 ## System Documentation
-- [System Architecture](./system/architecture.md)
-- [User Interface](./system/ui-overview.md)
-- [Notebook Interface](./system/marimo.md)
+- [System Architecture](../system/architecture.md)
+- [User Interface](../system/ui-overview.md)
+- [Notebook Interface](../system/marimo.md)
 
 ## Hardware Documentation
-- [Base / Cart](./hardware/base.md)
-- [Mount](./hardware/mount.md)
-- [Antenna](./hardware/antenna.md)
-- [Feed](./hardware/feed.md)
-- [Energy Unit](./hardware/energy_unit.md)
-- [Computer](./hardware/computer.md)
-- [Antenna Interface](./hardware/astra-ai.md)
-- [Software Radio](./hardware/sdr-carrier.md)
+- [Base / Cart](../hardware/base.md)
+- [Mount](../hardware/mount.md)
+- [Antenna](../hardware/antenna.md)
+- [Feed](../hardware/feed.md)
+- [Energy Unit](../hardware/energy_unit.md)
+- [Computer](../hardware/computer.md)
+- [Antenna Interface](../hardware/astra-ai.md)
+- [Software Radio](../hardware/sdr-carrier.md)
 
 ## Software Documentation
-- [Computer Configuration](./system/cpu-config.md)
-- [ASTRA Software Overview](./software/overview.md)
-- [Software Installation](./software/install.md)
-- [ASTRA MQTT API](./software/mqtt-api.md)
-- [ASTRA Marimo API](./software/marimo-api.md)
+- [Computer Configuration](../system/cpu-config.md)
+- [ASTRA Software Overview](../software/overview.md)
+- [Software Installation](../software/install.md)
+- [ASTRA MQTT API](../software/mqtt-api.md)
+- [ASTRA Marimo API](../software/marimo-api.md)
 
 ## Maker Documentation
-- [Building ASTRA](./makers/README.md)
-- [3D Printed Components](./hardware/3d_prints.md)
-- [Bill of Materials](./hardware/bom/astra-bom.csv)
+- [Building ASTRA](../makers/README.md)
+- [3D Printed Components](../hardware/3d_prints.md)
+- [Bill of Materials](../hardware/bom/astra-bom.csv)
 
 
