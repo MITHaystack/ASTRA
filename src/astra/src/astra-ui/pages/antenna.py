@@ -705,7 +705,27 @@ def create() -> None:
                         "3 = fully calibrated  ·  0 = not calibrated"
                     ).classes("text-[10px] text-slate-600 italic")
 
+            # -- GNSS INFORMATION ----
+            with ui.card().classes(
+                "bg-[#1e293b] border border-[#334155] rounded-xl flex-1"
+            ):
+                with ui.column().classes("p-5 gap-4"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("explore").classes("text-sky-400 text-xl")
+                        ui.label("GNSS Information") \
+                            .classes("font-semibold text-white text-base")
 
+                    with ui.grid(columns=4).classes("gap-x-6 gap-y-1 w-full"):
+                        b_gnss_lat = _badge("sensors", "Latitude: —", "text-slate-500")
+                        b_gnss_lon = _badge("sensors", "Longitude: —", "text-slate-500")
+                        b_gnss_alt = _badge("sensors", "Altitude: —", "text-slate-500")
+                        b_gnss_sat = _badge("sensors", "Satellites: —", "text-indigo-500")
+                        b_gnss_lck = _badge("sensors", "Lock: —", "text-indigo-600")
+
+                        b_gnss_utc = ui.label(
+                                        "gnss utc : —"
+                                        ).classes("text-[10px] text-slate-600 italic")
+             
             # ══════════════════════════════════════════════════════════════════
             # MOTION HISTORY CARD
             # ══════════════════════════════════════════════════════════════════
@@ -899,8 +919,23 @@ def create() -> None:
                 # calibration indicators
                 _set_cal(cal_sys_bar,   cal_sys_lvl,  imu_cal[0])
                 _set_cal(cal_gyro_bar,  cal_gyro_lvl,  imu_cal[1])
-                _set_cal(cal_accel_bar, cal_accel_lvl, imu_cal[2])
+                _set_cal(cal_accel_bar, cal_accel_lvl, imu_cal[2])s
                 _set_cal(cal_mag_bar,   cal_mag_lvl,   imu_cal[3])
+
+                # GNSS indicators
+                gnss_obj = await astra_state.antenna_state.get('astra-gps')
+                gnss_lat = gnss_obj['latitude']
+                gnss_lon = gnss_obj['longitude']
+                gnss_alt = gnss_obj['altitude']
+                gnss_sats = gnss_obj['sats']
+                gnss_lck = "Lock" if gnss_obj['fix'] else "No Lock"
+
+                b_gnss_utc.set_text(f"gnss utc : {gnss_obj['utc']}")
+                b_gnss_lat.set_text(f"Latitude: {gnss_lat} deg")
+                b_gnss_lon.set_text(f"Longitude: {gnss_lon} deg")
+                b_gnss_alt.set_text(f"Altitude: {gnss_alt} m")
+                b_gnss_sat.set_text(f"Satellites: {gnss_sats} ")
+                b_gnss_lck.set_text(f"Lock {gnss_lck}")
 
                 # if tel.epoch > 0:
                 #     age = now - tel.epoch
