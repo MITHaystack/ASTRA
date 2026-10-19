@@ -23,6 +23,9 @@ Construction of an ASTRA unit includes the following major steps:
 
 ASTRA uses 3D printed components to enable RF bias, an RF calibrator, a user display, and more integrated cable management. 
 
+- [3D Printing Files](../models)
+- [3D Printing Instructions](../hardware/3d_prints.md)
+
 ### Antenna Mounting Bracket
 
 ### Antenna Interface Unit (AI)
