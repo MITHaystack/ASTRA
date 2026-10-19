@@ -10,12 +10,10 @@ Printed Components include :
 - Antenna Bracket (ASTRA-AB)
 - Antenna Interface Unit Box (ASTRA-AIU-BOX)
 - Antenna Interface Unit Lid (ASTRA-AIU-LID)
-- AIU Buttons (ASTRA-AIU-BTN)
 - Base Template and Bracket (ASTRA-BASE-BRKT)
 - SDR Carrier (ASTRA-SDR-CARRIER)
-- CPU Carrier (ASTRA-CPU-CARRIER)
 
-For development a Centauri Carbon printer was used with a 
+For development a Centauri Carbon 3D printer was used with a 
 0.6mm hardened steel nozzle and an enclosure. Specific filament
 materials were selected based on the needed performance and
 testing. 
@@ -79,7 +77,11 @@ Printing settings:
 - Infill pattern : hexagonal
 - Infill / Wall Overlap: 20%
 
-### Buttons (ASTRA-AIU-BTN)
+### Buttons (ASTRA-AIU-BTN) (future)
+
+These have not yet been modeled and tested. They should improve 
+the water seal of ASTRA somewhat but probably need a corresponding
+sealing solution for the OLED display. 
 
 Printing settings:
 
@@ -129,8 +131,9 @@ Printing settings:
 - Infill pattern : hexagonal
 - Infill / Wall Overlap: 20%
 
-## CPU Carrier (ASTRA-CPU-CARRIER)
+## CPU Carrier (ASTRA-CPU-CARRIER) (optional)
 
+This did not end up being needed in the current version of ASTRA.
 The CPU used in ASTRA can vary and for some types of systems it can be 
 valuable to have a CPU carrier. This allows the CPU to be held down via kapton and covered
 with EMI copper foil as necessary. Care must be taken when modifying the carrier for
