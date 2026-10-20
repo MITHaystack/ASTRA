@@ -6,7 +6,7 @@ Building ASTRA is challenging but possible!
 
 Construction of an ASTRA unit includes the following major steps:
 
-1. Purchase the needed components.
+1. Purchase the needed components using the [BoM](../hardware/bom/astra-bom.csv).
 1. 3D print the base template, antenna bracket, and antenna interface unit and lid.
 1. Cut and assemble the base from wood using the template.
 1. Assemble the tripod and AzGti mount
@@ -27,6 +27,8 @@ ASTRA uses 3D printed components to enable RF bias, an RF calibrator, a user dis
 - [3D Printing Instructions](../hardware/3d_prints.md)
 
 ### Antenna Mounting Bracket
+
+
 
 ### Antenna Interface Unit (AI)
 

@@ -21,7 +21,7 @@ testing.
 
 ### Bases
 
-ASTRA doesn't really rely on the rolling base for more than leveling. The mount used with the unit can also do that function. Using ASTRA without the base may be easier if you aren't rolling it in an out of classrooms. It is also possible to have a fixed mounting. However, you need to manage weather proofing for an outdoor installation. The ASTRA hardware isn't well enough sealed to live in the wild without protection. 
+ASTRA doesn't really rely on the rolling base for more than moving the system easily and leveling. The mount used with the unit can also do the leveling function. Using ASTRA without the base may be easier if you aren't rolling it in an out of classrooms or if you have a fixed location. However, for a fixed mounting you need to manage weather proofing for an outdoor installation. The ASTRA hardware isn't well enough sealed to live in the wild without protection. A traditional telescope dome or RF transparent outdoor bubble dome or tent is a potential solution. 
 
 ### Antennas
 
@@ -52,7 +52,7 @@ For slightly higher cost it may be valuable to consider a faster optical telesco
 
 - [SVBony SV535](https://www.svbony.com/products/sv535-portable-f28-35mm-apo-telescope-with-ed-glass)
 
-When using a different telescope it is likely you will need a different adapter and tube stack to attach to the associated CCD. 
+When using a different telescope it is likely you will need a different adapter and tube stack to attach to the associated CCD. This gets into a lot of details about the telescope and CCD imager that are specific to those selected. 
 
 ### CCD Cameras
 
@@ -66,17 +66,22 @@ Note, there is a point where it makes more sense to split the optical telescope 
 ### Software Radio
 
 It is possible to use different software radios although the ASTRA software is currently hardwired 
-for the Analog Devices Pluto. 
+for the Analog Devices Pluto. Although the RTL-SDR radio is much lower cost and can receive the 1420 MHz hydrogen line. It has a very poor passband shape and is very sensitive to inteference. As such it is actually difficult to detect the H-line signal under many conditions. The Pluto has a much wider passband and a spectrally flater and more linear response. Ettus and RFSoC radios (e.g. Digilent RFSoC 4x2) can also be used but tend to be much more expensive. They can be more suitable to multiple channel systems. 
 
 
 ## Interferometry
 
 We have been asked about this a bit so here is some advice on creating an interferometer using ASTRA.
 
+Connected interferometry can be done using two antennas and feeds separated by a fixed baseline and pointing in the same direction. The RF signals from the two systems are combined in analog using a combiner or hybrid and this produces a summing interferometer. 
+
+For disconnected interferometry it is necessary to have highly coherent and externally clockable radios. Inexpensive radios can sometimes be hacked to share a common clock but this won't be useable over long baselines. A high performance GNSS stabilized ovenized crystal will provide reasonable performance for disconnected 1420 MHz interferometry over reasonable baselines.  
 
 ### Analog Sum Interferometry
-
+ 
+More details to come... 
 
 ### Digital Interferometry
 
+More details to come... 
 
