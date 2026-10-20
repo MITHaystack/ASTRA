@@ -73,15 +73,14 @@ for the Analog Devices Pluto. Although the RTL-SDR radio is much lower cost and 
 
 We have been asked about this a bit so here is some advice on creating an interferometer using ASTRA.
 
-Connected interferometry can be done using two antennas and feeds separated by a fixed baseline and pointing in the same direction. The RF signals from the two systems are combined in analog using a combiner or hybrid and this produces a summing interferometer. 
+You need two working antennas, feeds, and pointing systems to get interferometry to work. Antenna alignment must be reasonable bewteen the two systems. For example, both systems need to be able to accurately point at the Sun to use it as a source. 
 
-For disconnected interferometry it is necessary to have highly coherent and externally clockable radios. Inexpensive radios can sometimes be hacked to share a common clock but this won't be useable over long baselines. A high performance GNSS stabilized ovenized crystal will provide reasonable performance for disconnected 1420 MHz interferometry over reasonable baselines.  
+In general an interferometer that is physically connected to a common radio is far more likely to work properly. Unfortunately, most inexpensive radios are not well suited to separate digitization and digital processing to combine the signals. This is possible but more costly and has its own complexities.  
 
 ### Analog Sum Interferometry
  
-More details to come... 
+ Connected interferometry can be done using two antennas and feeds separated by a fixed baseline and pointing in the same direction. The RF signals from the two systems are combined in analog using a combiner or hybrid and power detection is done in the digital processing. This produces a summing interferometer and will generate fringes related to the source structure in the pointing direction and baseline spacing.  
 
 ### Digital Interferometry
 
-More details to come... 
-
+For disconnected interferometry it is necessary to have highly coherent and externally clockable radios. Inexpensive radios can sometimes be hacked to share a common clock but this won't be useable over long baselines. A high performance GNSS stabilized ovenized crystal will provide reasonable performance for disconnected 1420 MHz interferometry over reasonable baselines.  
