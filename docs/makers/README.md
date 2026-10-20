@@ -42,9 +42,28 @@ The ASTRA AI contains the electronics needed to interface
 
 ### Base Template
 
+The ASTRA Base Template is used both to mark the wooden base for cutting and as a mounting 
+bracket. As a bracket it helps to hold down the tripod tensioning elements and prevent the 
+feed from slipping when the tripod is moved. 
 
+- [Base Template](../../models/astra-base-template.stl)
+
+### Software Radio Spacer
+
+The Software Radio spacer is specfic to the Pluto SDR. It cradles the SDR unit and simplifies the process of enclosing the unit in foil EMI tape. The radio wedges into the DAQ and Energy unit 
+enclosure with the spacer providing a standoff. 
+
+- [SDR Spacer](../../models/astra-sdr-spacer.stl)
 
 ### Solar Filter
+
+The solar filter is design for self production of an appropriate filter for day time use of the
+ASTRA SV160 optical finder scope and CCD. Solar filter foil is cut to shape and super glue used to
+attach it to the inside of the solar filter body. A retaining ring is added on the interior side of the foil and filter body to create the filter. This filter can then be placed over the optical 
+telescope and can be held on with some appropriate tape (e.g. painter's tape works well).
+
+- [Solar Filter Body](../../models/astra-sv-solar-filter-body.stl)
+- [Solar Filter Retainer](../../models/astra-sv-solar-filter-retainer.stl)
 
 ## ASTRA Base
 
