@@ -11,7 +11,7 @@ ASTRA makes different choices to address some of these limitations. In particula
 
 
 ## About
-- [ASTRA Components](../about/astra.md)
+- [ASTRA Components](../hardware/bom/astra-bom.csv)
 - [About ASTRA](../about/README.md)
 - [License](../about/LICENSE.md)
 

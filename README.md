@@ -87,8 +87,8 @@ Our lessons are currently under development and will be released after we comple
 - [Imaging Sagitarius A*](docs/projects/astra-project-sagitariusA)
 
 ### Building ASTRA (Advanced)
-- [Building ASTRA](docs/projects/astra-building)
-- [Customizing ASTRA](docs/projects/astra-customizing)
+- [Building ASTRA](docs/makers/README.md)
+- [Customizing ASTRA](docs/makers/astra-customizing.md)
 
 ## License
 
