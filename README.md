@@ -38,10 +38,11 @@ enables a direct comparison of radio signatures with wide field of view imaging.
 
 ASTRA can be constructed by a small group using off the shelf components, 3D printed brackets and enclosures, and open source software. 
 
-- [Components](docs/bom/astra-bom.csv)
-- [Assembly](docs/hardware/)
+- [Overview](docs/overview/README.md)
+- [Components](docs/hardware/bom/astra-bom.csv)
+- [Assembly](docs/makers/README.md)
 - [Configuration](docs/system/system.md)
-- [User Interface](docs/software/astra-ui/)
+- [User Interface](docs/software/astra-ui/README.md)
 - [Environmental](docs/system/environmental-overview.md)
 
 Although many alternative components exist, the overall selections for ASTRA are a good balance of cost, performance, and integration complexity. 
