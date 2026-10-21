@@ -1,8 +1,8 @@
-## The ASTRA User Interface
+# The ASTRA User Interface
 
-### ASTRA UI
+## Marimo Notebook
 
-### Marimo Notebook
+## Web Browser Interface
 
 ### Sky View
 
@@ -13,3 +13,8 @@
 ### Imager
 
 ### Settings
+
+## Remote Desktop (advanced)
+
+## Command Line (advanced)
+
